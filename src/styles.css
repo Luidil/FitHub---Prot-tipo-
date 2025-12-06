@@ -324,7 +324,7 @@ button.ghost {
 
 .section-split {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 1rem;
 }
 
@@ -1709,6 +1709,101 @@ select option {
 
 .chat-form button {
   flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .app-shell {
+    width: 100%;
+    padding: 1.25rem 1rem 2rem;
+    margin: 0 auto 3rem;
+  }
+
+  .app-header {
+    padding: 0.9rem 1rem;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  nav {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 0.5rem;
+  }
+
+  nav button {
+    padding: 0.4rem 0.75rem;
+    white-space: nowrap;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+  }
+
+  .product-panel,
+  .single-surface {
+    border-radius: 20px;
+    padding: 1.25rem;
+  }
+
+  .hero {
+    padding: 1.5rem;
+    border-radius: 20px;
+  }
+
+  .hero-card {
+    padding: 1rem;
+  }
+
+  .home-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section-split {
+    grid-template-columns: 1fr;
+  }
+
+  .section-head h3 {
+    font-size: 1.2rem;
+  }
+
+  .event-head {
+    flex-direction: column;
+  }
+
+  .venue-thumb {
+    width: 100%;
+    height: 160px;
+  }
+
+  .card-actions {
+    flex-direction: column;
+  }
+
+  .card-actions button {
+    width: 100%;
+  }
+
+  .map-card {
+    grid-template-columns: 1fr;
+    padding: 1.25rem;
+  }
+
+  .map-viewport {
+    height: 240px;
+  }
+
+  .modal-card {
+    width: 95vw;
+    padding: 1rem;
+  }
+
+  .chat-modal {
+    width: 95vw;
+  }
 }
 
 .friend-card {
