@@ -358,6 +358,9 @@ button.ghost {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .event-head {
@@ -1765,6 +1768,10 @@ select option {
   .single-surface {
     border-radius: 20px;
     padding: 1rem;
+    width: 100%;
+    max-width: 100%;
+    overflow-x: hidden;
+    overflow-y: visible;
   }
 
   .hero {
@@ -1778,6 +1785,18 @@ select option {
 
   .home-grid {
     grid-template-columns: 1fr;
+  }
+
+  .product-panel {
+    overflow-x: hidden;
+    overflow-y: visible;
+  }
+
+  .event-card img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: 12px;
   }
 
   .section-split {
