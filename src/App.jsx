@@ -1494,7 +1494,16 @@ function HomeView({
 }
 
 function VenueMap({ venues, userLocation }) {
-  const points = useMemo(() => venues.filter(v => v.lat && v.lng), [venues])
+  const hydrated = useMemo(() => {
+    const baseById = Object.fromEntries(SALVADOR_LOCATIONS.map(v => [v.id, v]))
+    return venues.map(v => ({ ...baseById[v.id], ...v }))
+  }, [venues])
+
+  const points = useMemo(() => {
+    const withCoords = hydrated.filter(v => v.lat && v.lng)
+    if (withCoords.length) return withCoords
+    return SALVADOR_LOCATIONS
+  }, [hydrated])
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
