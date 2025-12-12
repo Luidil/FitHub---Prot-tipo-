@@ -5,6 +5,7 @@ import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
 import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import 'leaflet/dist/leaflet.css'
+import { supabase } from './supabase'
 
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
@@ -407,41 +408,26 @@ function removeKey(key) {
 }
 
 export default function App() {
-  const [user, setUser] = useState(() => {
-    const stored = readLocalJSON(STORAGE_KEYS.user, null)
-    return stored && stored.name ? stored : null
-  })
-  const [events, setEvents] = useState(() => {
-    const stored = readLocalJSON(STORAGE_KEYS.events, defaultEvents)
-    return hydrateEvents(stored)
-  })
+  const [user, setUser] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [events, setEvents] = useState([])
   const [swipeIndex, setSwipeIndex] = useState(0)
   const [view, setView] = useState('home')
-  const [joined, setJoined] = useState(() => readLocalJSON(STORAGE_KEYS.joined, {}))
-  const [fund, setFund] = useState(() => readLocalNumber(STORAGE_KEYS.fund, 0))
-  const [ranking, setRanking] = useState(() => readLocalJSON(STORAGE_KEYS.ranking, DEFAULT_RANKING))
-  const [performance, setPerformance] = useState(() =>
-    readLocalJSON(STORAGE_KEYS.performance, { totals: {}, videos: [] })
-  )
-  const [history, setHistory] = useState(() => readLocalJSON(STORAGE_KEYS.history, []))
-  const [venues, setVenues] = useState(() => readLocalJSON(STORAGE_KEYS.venues, SALVADOR_LOCATIONS))
-  const [teams, setTeams] = useState(() => readLocalJSON(STORAGE_KEYS.teams, DEFAULT_TEAMS))
-  const [friends, setFriends] = useState(() => readLocalJSON(STORAGE_KEYS.friends, DEFAULT_FRIENDS))
-  const [chatMessages, setChatMessages] = useState(() => readLocalJSON(STORAGE_KEYS.chat, DEFAULT_CHAT))
-  const [notifications, setNotifications] = useState(() => readLocalJSON(STORAGE_KEYS.notifications, []))
-  const [stories, setStories] = useState(() => readLocalJSON(STORAGE_KEYS.stories, DEFAULT_STORIES))
-  const [championships, setChampionships] = useState(() =>
-    readLocalJSON(STORAGE_KEYS.championships, DEFAULT_CHAMPIONSHIPS)
-  )
-  const [kids, setKids] = useState(() => readLocalJSON(STORAGE_KEYS.kids, DEFAULT_KIDS))
-  const [cancellations, setCancellations] = useState(() =>
-    readLocalJSON(STORAGE_KEYS.cancellations, { count: 0, suspendedUntil: null })
-  )
-  const [billing, setBilling] = useState(() => {
-    const stored = readLocalJSON(STORAGE_KEYS.billing, null)
-    if (stored && stored.month === currentMonthId()) return stored
-    return { month: currentMonthId(), paid: false }
-  })
+  const [joined, setJoined] = useState({})
+  const [fund, setFund] = useState(0)
+  const [ranking, setRanking] = useState({})
+  const [performance, setPerformance] = useState({ totals: {}, videos: [] })
+  const [history, setHistory] = useState([])
+  const [venues, setVenues] = useState([])
+  const [teams, setTeams] = useState([])
+  const [friends, setFriends] = useState([])
+  const [chatMessages, setChatMessages] = useState([])
+  const [notifications, setNotifications] = useState([])
+  const [stories, setStories] = useState([])
+  const [championships, setChampionships] = useState([])
+  const [kids, setKids] = useState([])
+  const [cancellations, setCancellations] = useState({ count: 0, suspendedUntil: null })
+  const [billing, setBilling] = useState({ month: currentMonthId(), paid: false })
   const [userLocation, setUserLocation] = useState(null)
   const [toast, setToast] = useState({ message: '', type: 'info', visible: false })
   const [authError, setAuthError] = useState('')
@@ -451,79 +437,236 @@ export default function App() {
   const [showChat, setShowChat] = useState(false)
   const [activeFriend, setActiveFriend] = useState(null)
 
+  // =============================================
+  // SUPABASE: Auth listener
+  // =============================================
+  useEffect(() => {
+    // Verificar sessão atual
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        loadUserProfile(session.user.id)
+      } else {
+        setLoading(false)
+      }
+    })
+
+    // Escutar mudanças de auth
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          await loadUserProfile(session.user.id)
+        } else {
+          setUser(null)
+          setLoading(false)
+        }
+      }
+    )
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  async function loadUserProfile(userId) {
+    try {
+      const { data: profile, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+      
+      if (error) throw error
+      setUser({ ...profile, id: userId })
+    } catch (err) {
+      console.error('Erro ao carregar perfil:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // =============================================
+  // SUPABASE: Carregar dados iniciais
+  // =============================================
+  useEffect(() => {
+    loadVenues()
+    loadEvents()
+    loadTeams()
+    loadChampionships()
+  }, [])
+
+  async function loadVenues() {
+    try {
+      const { data, error } = await supabase
+        .from('venues')
+        .select('*')
+        .order('name')
+      if (error) throw error
+      setVenues(data || [])
+    } catch (err) {
+      console.error('Erro ao carregar venues:', err)
+      setVenues(SALVADOR_LOCATIONS) // fallback
+    }
+  }
+
+  async function loadEvents() {
+    try {
+      const { data, error } = await supabase
+        .from('events')
+        .select(`
+          *,
+          venue:venues(*),
+          creator:profiles(id, name),
+          players:event_players(
+            id, paid, checked_in, checkin_method,
+            user:profiles(id, name)
+          ),
+          stats:event_stats(id, label)
+        `)
+        .order('datetime', { ascending: true })
+      
+      if (error) throw error
+      
+      // Transformar para formato esperado pelo app
+      const formatted = (data || []).map(ev => ({
+        id: ev.id,
+        sport: ev.sport,
+        venue: ev.venue ? `${ev.venue.name} — ${ev.venue.city}` : 'Local não definido',
+        venueId: ev.venue_id,
+        venuePhoto: SALVADOR_LOCATIONS.find(v => v.id === ev.venue_id)?.photo,
+        datetime: ev.datetime,
+        slots_total: ev.slots_total,
+        slots_taken: ev.players?.length || 0,
+        price_per_player: ev.price_per_player,
+        creator: ev.creator?.name || 'Anônimo',
+        creator_id: ev.creator_id,
+        level: ev.level,
+        stats: ev.stats?.map(s => s.label) || statsPresetFor(ev.sport),
+        players: ev.players || []
+      }))
+      
+      setEvents(formatted)
+      
+      // Atualizar joined baseado nos players
+      if (user) {
+        const userJoined = {}
+        formatted.forEach(ev => {
+          const myEntry = ev.players?.find(p => p.user?.id === user.id)
+          if (myEntry) {
+            userJoined[ev.id] = {
+              checked_in: myEntry.checked_in,
+              method: myEntry.checkin_method,
+              paid: myEntry.paid
+            }
+          }
+        })
+        setJoined(userJoined)
+      }
+    } catch (err) {
+      console.error('Erro ao carregar eventos:', err)
+      setEvents(hydrateEvents(defaultEvents)) // fallback
+    }
+  }
+
+  async function loadTeams() {
+    try {
+      const { data, error } = await supabase
+        .from('teams')
+        .select(`
+          *,
+          captain:profiles(id, name),
+          members:team_members(user:profiles(id, name))
+        `)
+        .order('name')
+      
+      if (error) throw error
+      
+      const formatted = (data || []).map(t => ({
+        id: t.id,
+        name: t.name,
+        sport: t.sport,
+        captain: t.captain?.name || 'Sem capitão',
+        captain_id: t.captain_id,
+        members: t.members?.map(m => m.user?.name) || [],
+        lastPing: null,
+        pingResponses: {}
+      }))
+      
+      setTeams(formatted)
+    } catch (err) {
+      console.error('Erro ao carregar times:', err)
+      setTeams(DEFAULT_TEAMS) // fallback
+    }
+  }
+
+  async function loadChampionships() {
+    try {
+      const { data, error } = await supabase
+        .from('championships')
+        .select(`
+          *,
+          organizer:profiles(id, name),
+          teams:championship_teams(team:teams(*))
+        `)
+        .order('start_date', { ascending: true })
+      
+      if (error) throw error
+      
+      const formatted = (data || []).map(c => ({
+        id: c.id,
+        name: c.name,
+        sport: c.sport,
+        category: c.category || '',
+        fee: c.fee || 0,
+        startDate: c.start_date,
+        endDate: c.end_date,
+        description: c.description || '',
+        prizes: c.prizes || '',
+        rules: c.rules || '',
+        maxTeams: c.max_teams || 8,
+        playersPerTeam: c.players_per_team || 5,
+        organizer_id: c.organizer_id,
+        registrations: [],
+        teams: c.teams?.map(t => t.team) || [],
+        soloPlayers: []
+      }))
+      
+      setChampionships(formatted)
+    } catch (err) {
+      console.error('Erro ao carregar campeonatos:', err)
+      setChampionships(DEFAULT_CHAMPIONSHIPS) // fallback
+    }
+  }
+
+  // =============================================
+  // SUPABASE: Realtime subscriptions
+  // =============================================
+  useEffect(() => {
+    const eventsChannel = supabase
+      .channel('events-realtime')
+      .on('postgres_changes', 
+        { event: '*', schema: 'public', table: 'events' },
+        () => loadEvents()
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'event_players' },
+        () => loadEvents()
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(eventsChannel)
+    }
+  }, [user])
+
   function hardReset() {
-    Object.values(STORAGE_KEYS).forEach(removeKey)
+    supabase.auth.signOut()
+    setUser(null)
+    setEvents([])
+    setTeams([])
+    setChampionships([])
+    setVenues([])
     if (hasWindow()) {
       window.location.reload()
     }
   }
-
-  // Hard reset if persisted state is corrupted and prevents render
-  useEffect(() => {
-    const hasValidUser = user && user.name
-    if (hasValidUser) return
-    const demoKeys = Object.values(STORAGE_KEYS)
-    demoKeys.forEach(removeKey)
-    setUser(null)
-    setEvents(hydrateEvents(defaultEvents))
-    setJoined({})
-    setFund(0)
-    setRanking(DEFAULT_RANKING)
-    setPerformance({ totals: {}, videos: [] })
-    setHistory([])
-    setVenues(SALVADOR_LOCATIONS)
-    setTeams(DEFAULT_TEAMS)
-    setFriends(DEFAULT_FRIENDS)
-    setChatMessages(DEFAULT_CHAT)
-    setNotifications([])
-    setStories(DEFAULT_STORIES)
-    setChampionships(DEFAULT_CHAMPIONSHIPS)
-    setKids(DEFAULT_KIDS)
-  }, [])
-
-  useEffect(() => {
-    if (user) {
-      persistJSON(STORAGE_KEYS.user, user)
-    } else {
-      removeKey(STORAGE_KEYS.user)
-    }
-  }, [user])
-
-  useEffect(() => {
-    persistJSON(STORAGE_KEYS.events, safeEventsArr())
-    persistJSON(STORAGE_KEYS.joined, joined)
-    persistString(STORAGE_KEYS.fund, String(fund))
-    persistJSON(STORAGE_KEYS.ranking, ranking)
-    persistJSON(STORAGE_KEYS.performance, performance)
-    persistJSON(STORAGE_KEYS.history, history)
-    persistJSON(STORAGE_KEYS.venues, venues)
-    persistJSON(STORAGE_KEYS.teams, teams)
-    persistJSON(STORAGE_KEYS.friends, friends)
-    persistJSON(STORAGE_KEYS.chat, chatMessages)
-    persistJSON(STORAGE_KEYS.notifications, notifications)
-    persistJSON(STORAGE_KEYS.stories, stories)
-    persistJSON(STORAGE_KEYS.championships, championships)
-    persistJSON(STORAGE_KEYS.kids, kids)
-    persistJSON(STORAGE_KEYS.cancellations, cancellations)
-    persistJSON(STORAGE_KEYS.billing, billing)
-  }, [
-    events,
-    joined,
-    fund,
-    ranking,
-    performance,
-    history,
-    venues,
-    teams,
-    friends,
-    chatMessages,
-    notifications,
-    stories,
-    championships,
-    kids,
-    cancellations,
-    billing
-  ])
 
   // Move any inscrições já comprovadas (checked_in) para o histórico
   useEffect(() => {
@@ -599,38 +742,84 @@ export default function App() {
   }, [user])
 
   function safeEventsArr() {
-    return Array.isArray(events) ? events : defaultEvents
+    return Array.isArray(events) ? events : []
   }
 
-  function handleLogin({ name, password }) {
-    const normalized = name.trim().toLowerCase()
-    const expected = AUTH_USER.name.toLowerCase()
-    const masterExpected = AUTH_MASTER.name.toLowerCase()
-
-    if (normalized === expected && password === AUTH_PASSWORD) {
-      setUser(AUTH_USER)
-      setAuthError('')
+  async function handleLogin({ name, password, isRegister = false }) {
+    setAuthError('')
+    setLoading(true)
+    
+    // Verificar se é um email válido
+    const email = name.trim()
+    if (!email.includes('@') || !email.includes('.')) {
+      setAuthError('Digite um email válido (ex: seu@email.com)')
+      setLoading(false)
+      return
+    }
+    
+    console.log('Tentando autenticação:', { email, isRegister })
+    
+    try {
+      if (isRegister) {
+        // Cadastrar novo usuário
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { name: email.split('@')[0] }
+          }
+        })
+        
+        console.log('Resultado signUp:', { data, error })
+        
+        if (error) throw error
+        
+        if (data?.user?.identities?.length === 0) {
+          setAuthError('Este email já está cadastrado. Faça login.')
+          setLoading(false)
+          return
+        }
+        
+        showToast('Conta criada com sucesso! Agora faça login.', 'success')
+        setLoading(false)
+        return
+      }
+      
+      // Login
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      })
+      
+      console.log('Resultado signIn:', { data, error })
+      
+      if (error) throw error
+      
       setView('home')
-      return
+      showToast(`Bem-vindo, ${data.user?.user_metadata?.name || email}!`, 'success')
+      
+      // Recarregar dados
+      loadEvents()
+      loadTeams()
+      loadChampionships()
+      
+    } catch (err) {
+      console.error('Erro de autenticação:', err)
+      setAuthError(err.message || 'Erro ao autenticar. Verifique suas credenciais.')
+    } finally {
+      setLoading(false)
     }
-
-    if (normalized === masterExpected && password === MASTER_PASSWORD) {
-      setUser(AUTH_MASTER)
-      setAuthError('')
-      setView('admin')
-      return
-    }
-
-    setAuthError('Credenciais inválidas para este ambiente.')
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    await supabase.auth.signOut()
     setUser(null)
     setAuthError('')
     setView('home')
+    showToast('Você saiu da conta.', 'info')
   }
 
-  function acceptEvent(event) {
+  async function acceptEvent(event) {
     if (!user) {
       showToast('Faça login para participar.', 'warn')
       return
@@ -685,48 +874,101 @@ export default function App() {
     }
     showToast('Você entrou na partida — confira em "Inscrições".', 'success')
     setView('inscricoes')
+    
+    // Salvar no Supabase
+    try {
+      await supabase.from('event_players').insert([{
+        event_id: event.id,
+        user_id: user.id
+      }])
+      loadEvents() // Recarregar
+    } catch (err) {
+      console.error('Erro ao salvar inscrição:', err)
+    }
   }
 
-  function rejectEvent(event) {
+  async function rejectEvent(event) {
     setEvents(prev => prev.filter(ev => ev.id !== event.id))
     showToast('Evento removido do feed.', 'info')
   }
 
-  function addCustomLocation({ name, bairro, tipo, superficie, photo, lat, lng }) {
+  async function addCustomLocation({ name, bairro, tipo, superficie, photo, lat, lng }) {
     if (!name || !bairro || !photo) {
       showToast('Informe nome, bairro e uma foto do local.', 'warn')
       return null
     }
-    const label = `${name} · ${bairro}`
-    const entry = {
-      id: slugify(label + Date.now()),
-      label,
-      bairro,
-      tipo: tipo || 'Quadra',
-      superficie: superficie || 'misto',
-      photo,
-      lat: lat ? Number(lat) : null,
-      lng: lng ? Number(lng) : null
+    
+    try {
+      const { data, error } = await supabase.from('venues').insert([{
+        name,
+        bairro,
+        tipo: tipo || 'Quadra',
+        superficie: superficie || 'misto',
+        city: user?.city || 'Salvador',
+        state: user?.state || 'BA'
+      }]).select().single()
+      
+      if (error) throw error
+      
+      const entry = {
+        id: data.id,
+        label: `${name} · ${bairro}`,
+        bairro,
+        tipo: tipo || 'Quadra',
+        superficie: superficie || 'misto',
+        photo,
+        lat: lat ? Number(lat) : null,
+        lng: lng ? Number(lng) : null
+      }
+      
+      setVenues(prev => [...prev, entry])
+      showToast('Local adicionado com sucesso!', 'success')
+      return entry
+    } catch (err) {
+      console.error('Erro ao criar local:', err)
+      showToast('Erro ao salvar local.', 'error')
+      return null
     }
-    setVenues(prev => {
-      if (prev.find(item => item.label === entry.label)) return prev
-      return [...prev, entry]
-    })
-    return entry
   }
 
-  function createTeamEntry({ name, sport, members }) {
+  async function createTeamEntry({ name, sport, members }) {
     if (!name) return null
-    const entry = {
-      id: slugify(name + Date.now()),
-      name,
-      sport: sport || 'Futebol 5x5',
-      captain: AUTH_USER.name,
-      members: members && members.length ? members : [AUTH_USER.name]
+    
+    try {
+      const { data, error } = await supabase.from('teams').insert([{
+        name,
+        sport: sport || 'Futebol 5x5',
+        captain_id: user?.id
+      }]).select().single()
+      
+      if (error) throw error
+      
+      // Adicionar o próprio usuário como membro
+      if (user?.id) {
+        await supabase.from('team_members').insert([{
+          team_id: data.id,
+          user_id: user.id
+        }])
+      }
+      
+      const entry = {
+        id: data.id,
+        name,
+        sport: sport || 'Futebol 5x5',
+        captain: user?.name || 'Você',
+        captain_id: user?.id,
+        members: [user?.name || 'Você']
+      }
+      
+      setTeams(prev => [...prev, entry])
+      notifyTeamMembers(entry.id, null, 'Novo time criado', entry)
+      showToast('Time criado com sucesso!', 'success')
+      return entry
+    } catch (err) {
+      console.error('Erro ao criar time:', err)
+      showToast('Erro ao criar time.', 'error')
+      return null
     }
-    setTeams(prev => [...prev, entry])
-    notifyTeamMembers(entry.id, null, 'Novo time criado', entry)
-    return entry
   }
 
   function notifyTeamMembers(teamId, eventRef = null, prefix = 'Convite enviado', directTeam = null) {
@@ -1004,27 +1246,59 @@ export default function App() {
     setActivePerformance(null)
   }
 
-  function createEvent(form) {
-    const id = 'e' + Math.floor(Math.random() * 100000)
-    const stats = Array.isArray(form.stats) && form.stats.length ? form.stats : statsPresetFor(form.sport)
-    const venueMeta = venues.find(v => v.label === form.venue)
-    const ev = {
-      id,
-      ...form,
-      price_per_player: 1,
-      stats,
-      venueId: venueMeta?.id,
-      venuePhoto: venueMeta?.photo,
-      venueCoords: venueMeta ? { lat: venueMeta.lat, lng: venueMeta.lng } : null
+  async function createEvent(form) {
+    if (!user) {
+      showToast('Faça login para criar um evento.', 'warn')
+      return
     }
-    setEvents([ev, ...safeEventsArr()])
-    setView('home')
-    if (form.teamId) {
-      notifyTeamMembers(form.teamId, ev, 'Convite para jogo')
+    
+    const stats = Array.isArray(form.stats) && form.stats.length ? form.stats : statsPresetFor(form.sport)
+    const venueMeta = venues.find(v => v.label === form.venue || v.id === form.venueId)
+    
+    try {
+      // Criar evento no Supabase
+      const { data: newEvent, error: eventError } = await supabase.from('events').insert([{
+        sport: form.sport,
+        venue_id: venueMeta?.id || form.venueId,
+        datetime: form.datetime,
+        slots_total: form.slots_total || 10,
+        price_per_player: 1,
+        level: form.level,
+        creator_id: user.id
+      }]).select().single()
+      
+      if (eventError) throw eventError
+      
+      // Inserir stats do evento
+      if (stats.length > 0) {
+        const statsToInsert = stats.map(label => ({
+          event_id: newEvent.id,
+          label
+        }))
+        await supabase.from('event_stats').insert(statsToInsert)
+      }
+      
+      // Recarregar eventos
+      await loadEvents()
+      
+      setView('home')
+      showToast('Evento criado com sucesso!', 'success')
+      
+      if (form.teamId) {
+        const ev = {
+          ...form,
+          id: newEvent.id,
+          venue: venueMeta?.label || form.venue
+        }
+        notifyTeamMembers(form.teamId, ev, 'Convite para jogo')
+      }
+    } catch (err) {
+      console.error('Erro ao criar evento:', err)
+      showToast('Erro ao criar evento. Tente novamente.', 'error')
     }
   }
 
-  function checkIn(eventId, method = 'photo', proofUrl = '') {
+  async function checkIn(eventId, method = 'photo', proofUrl = '') {
     if (!user) {
       showToast('Faça login para confirmar presença.', 'warn')
       return
@@ -1051,31 +1325,47 @@ export default function App() {
       return
     }
 
-    setJoined(prev => {
-      const { [eventId]: _, ...rest } = prev
-      return rest
-    })
+    try {
+      // Atualizar no Supabase
+      await supabase.from('event_players')
+        .update({
+          checked_in: true,
+          checkin_method: method
+        })
+        .eq('event_id', eventId)
+        .eq('user_id', user.id)
+      
+      setJoined(prev => {
+        const { [eventId]: _, ...rest } = prev
+        return rest
+      })
 
-    const historyEntry = {
-      id: eventId,
-      sport: ev.sport,
-      venue: ev.venue,
-      datetime: ev.datetime,
-      method,
-      proof,
-      videoUrl: method === 'video' ? proof : ''
+      const historyEntry = {
+        id: eventId,
+        sport: ev.sport,
+        venue: ev.venue,
+        datetime: ev.datetime,
+        method,
+        proof,
+        videoUrl: method === 'video' ? proof : ''
+      }
+
+      setHistory(prev => [historyEntry, ...prev].slice(0, 30))
+
+      const points = method === 'photo' ? 5 : 7
+
+      setRanking(prev => ({
+        ...prev,
+        [user.id]: (prev[user.id] || 0) + points
+      }))
+
+      showToast(`Check-in registrado com ${method === 'photo' ? 'foto' : 'vídeo'}. Você ganhou ${points} pontos!`, 'success')
+      
+      loadEvents() // Recarregar
+    } catch (err) {
+      console.error('Erro ao fazer check-in:', err)
+      showToast('Erro ao registrar check-in.', 'error')
     }
-
-    setHistory(prev => [historyEntry, ...prev].slice(0, 30))
-
-    const points = method === 'photo' ? 5 : 7
-
-    setRanking(prev => ({
-      ...prev,
-      [user.id]: (prev[user.id] || 0) + points
-    }))
-
-    showToast(`Check-in registrado com ${method === 'photo' ? 'foto' : 'vídeo'}. Você ganhou ${points} pontos!`, 'success')
   }
 
   function monthlyDue() {
@@ -1305,8 +1595,21 @@ export default function App() {
     return null
   }
 
+  // Loading screen
+  if (loading) {
+    return (
+      <div className="login-shell">
+        <div className="login-card" style={{ textAlign: 'center' }}>
+          <p className="eyebrow">FitHub</p>
+          <h1>Carregando...</h1>
+          <p className="lead">Aguarde enquanto verificamos sua sessão.</p>
+        </div>
+      </div>
+    )
+  }
+
   if (!isAuthenticated) {
-    return <LoginScreen onSubmit={handleLogin} error={authError} onReset={hardReset} />
+    return <LoginScreen onSubmit={handleLogin} error={authError} onReset={hardReset} loading={loading} />
   }
 
   const isHome = view === 'home'
@@ -3714,7 +4017,7 @@ function EmptyState({ message, compact }) {
   return <div className={`empty ${compact ? 'compact' : ''}`}>{message}</div>
 }
 
-function LoginScreen({ onSubmit, error, onReset }) {
+function LoginScreen({ onSubmit, error, onReset, loading }) {
   const [form, setForm] = useState({ name: '', password: '' })
   const [mode, setMode] = useState('login') // login | register | recover
   const [status, setStatus] = useState('')
@@ -3745,26 +4048,20 @@ function LoginScreen({ onSubmit, error, onReset }) {
   function submit(e) {
     e.preventDefault()
     if (mode === 'recover') {
-      setStatus('Enviamos um link de redefinição (mock) para o seu e-mail.')
-      setMouthOpen(false)
-      return
-    }
-    if (mode === 'register') {
-      setStatus('Cadastro criado (demo). Agora é só entrar.')
-      setMode('login')
+      setStatus('Enviamos um link de redefinição para o seu e-mail.')
       setMouthOpen(false)
       return
     }
     setMouthOpen(false)
-    onSubmit(form)
+    onSubmit({ ...form, isRegister: mode === 'register' })
   }
 
   const title = mode === 'login' ? 'Entrar para jogar' : mode === 'register' ? 'Criar conta' : 'Recuperar acesso'
   const subtitle = mode === 'login'
-    ? 'Use o acesso de demonstração para ver como o "FitHub" funciona na prática.'
+    ? 'Use seu email ou nome para entrar. Ainda não tem conta? Clique em Criar conta.'
     : mode === 'register'
-      ? 'Cadastre-se para salvar partidas e ranking (demo).'
-      : 'Informe seu e-mail / nome para receber o link (mock).'
+      ? 'Cadastre-se para salvar partidas e ranking.'
+      : 'Informe seu e-mail para receber o link de redefinição.'
 
   return (
     <div className="login-shell">
@@ -3813,9 +4110,10 @@ function LoginScreen({ onSubmit, error, onReset }) {
         </div>
 
         <form onSubmit={submit}>
-          <label>{mode === 'recover' ? 'E-mail ou nome' : 'Nome completo'}</label>
+          <label>E-mail</label>
           <input
-            placeholder={mode === 'recover' ? 'seuemail@exemplo.com' : 'Lucas Santiago'}
+            type="email"
+            placeholder="seu@email.com"
             value={form.name}
             onFocus={() => { setLookAway(false); setPeek(false); setEyeDir('left') }}
             onBlur={() => { setEyeDir('center'); setPeek(false); setLookAway(false); setMouthOpen(false) }}
@@ -3836,12 +4134,12 @@ function LoginScreen({ onSubmit, error, onReset }) {
             </>
           )}
           {mode === 'recover' && <small className="login-status">{status}</small>}
-          <button className="primary" type="submit">
-            {mode === 'login' ? 'Acessar painel' : mode === 'register' ? 'Registrar' : 'Enviar link'}
+          <button className="primary" type="submit" disabled={loading}>
+            {loading ? 'Aguarde...' : mode === 'login' ? 'Acessar painel' : mode === 'register' ? 'Registrar' : 'Enviar link'}
           </button>
           {onReset && (
             <button className="ghost" type="button" onClick={onReset}>
-              Limpar dados locais
+              Limpar dados
             </button>
           )}
         </form>
