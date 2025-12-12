@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">FitHub</string>
+    <string name="title_activity_main">FitHub</string>
+    <string name="package_name">com.fithub.app</string>
+    <string name="custom_url_scheme">com.fithub.app</string>
+</resources>

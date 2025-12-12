@@ -121,7 +121,9 @@ const DEFAULT_TEAMS = [
     name: 'Salvador Tigers',
     sport: 'Futebol 5x5',
     captain: 'Lucas Santiago',
-    members: ['Lucas Santiago', 'João Vilar', 'Caio Silva', 'Igor Passos']
+    members: ['Lucas Santiago', 'João Vilar', 'Caio Silva', 'Igor Passos'],
+    lastPing: null,
+    pingResponses: {}
   }
 ]
 
@@ -141,8 +143,8 @@ const DEFAULT_STORIES = [
     athlete: 'Lucas Santiago',
     eventName: 'Pelada 5x5 · Pituba',
     venue: 'Quadra Arena X',
-    beforePhoto: 'https://images.unsplash.com/photo-1509021436665-8f07dbf5bf1d?auto=format&fit=crop&w=500&q=80',
-    afterPhoto: 'https://images.unsplash.com/photo-1502810190503-830027aa7e2e?auto=format&fit=crop&w=500&q=80',
+    beforePhoto: 'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?auto=format&fit=crop&w=500&q=80',
+    afterPhoto: 'https://images.unsplash.com/photo-1517466787929-bc90951d0974?auto=format&fit=crop&w=500&q=80',
     caption: 'Antes e depois do treino — check-in feito com o squad inteiro.',
     createdAt: Date.now() - 1000 * 60 * 45
   },
@@ -151,8 +153,8 @@ const DEFAULT_STORIES = [
     athlete: 'Mariana Lopes',
     eventName: 'Basquete 3x3 · Barris',
     venue: 'Poliesportivo Y',
-    beforePhoto: 'https://images.unsplash.com/photo-1508804185872-d7badad00f7d?auto=format&fit=crop&w=500&q=80',
-    afterPhoto: 'https://images.unsplash.com/photo-1461897104016-0b3b00cc81ee?auto=format&fit=crop&w=500&q=80',
+    beforePhoto: 'https://images.unsplash.com/photo-1519861531473-9200262188bf?auto=format&fit=crop&w=500&q=80',
+    afterPhoto: 'https://images.unsplash.com/photo-1504450758481-7338eba7524a?auto=format&fit=crop&w=500&q=80',
     caption: 'Quadra cheia + foto final pra liberar no Stories.',
     createdAt: Date.now() - 1000 * 60 * 60 * 2
   }
@@ -171,7 +173,15 @@ const DEFAULT_CHAMPIONSHIPS = [
     fee: 25,
     startDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
     description: 'Rodadas rápidas aos sábados · Pais confirmam via app.',
-    registrations: ['kid1']
+    prizes: '1º lugar: Troféu + Medalhas | 2º: Medalhas',
+    rules: 'Jogos de 2 tempos de 10min. Cartão vermelho = suspensão.',
+    maxTeams: 8,
+    playersPerTeam: 5,
+    registrations: ['kid1'],
+    teams: [
+      { id: 'team1', name: 'Tigres FC', members: ['Lucas', 'João', 'Pedro'], captain: 'Lucas' }
+    ],
+    soloPlayers: []
   }
 ]
 
@@ -741,6 +751,24 @@ export default function App() {
         timestamp: Date.now()
       }
     ])
+    // Create ping with pending responses
+    const pingResponses = {}
+    team.members.forEach(member => {
+      pingResponses[member] = 'pending'
+    })
+    setTeams(prev => prev.map(t => 
+      t.id === teamId 
+        ? { ...t, lastPing: Date.now(), pingResponses } 
+        : t
+    ))
+  }
+
+  function respondToPing(teamId, member, response) {
+    setTeams(prev => prev.map(t => 
+      t.id === teamId 
+        ? { ...t, pingResponses: { ...t.pingResponses, [member]: response } }
+        : t
+    ))
   }
 
   function addFriend(name) {
@@ -828,6 +856,101 @@ export default function App() {
           : champ
       )
     )
+  }
+
+  function joinChampionship(champId, enrollForm) {
+    const { mode, playerName, playerPhone, selectedTeamId, newTeamName } = enrollForm
+    if (!playerName || !playerPhone) {
+      showToast('Preencha nome e telefone.', 'warn')
+      return
+    }
+
+    setChampionships(prev => prev.map(champ => {
+      if (champ.id !== champId) return champ
+
+      const champTeams = champ.teams || []
+      const soloPlayers = champ.soloPlayers || []
+      const playersPerTeam = champ.playersPerTeam || 5
+      const maxTeams = champ.maxTeams || 8
+      const player = { id: `p_${Date.now()}`, name: playerName, phone: playerPhone }
+
+      if (mode === 'solo') {
+        // Try to add to incomplete team first
+        const incompleteTeam = champTeams.find(t => t.members.length < playersPerTeam)
+        if (incompleteTeam) {
+          const updatedTeams = champTeams.map(t => 
+            t.id === incompleteTeam.id 
+              ? { ...t, members: [...t.members, playerName] }
+              : t
+          )
+          showToast(`Você entrou no time ${incompleteTeam.name}!`, 'success')
+          return { ...champ, teams: updatedTeams, registrations: [...champ.registrations, player.id] }
+        }
+        // Otherwise add to solo queue
+        showToast('Você está na fila. Será alocado quando um time abrir vaga.', 'info')
+        return { ...champ, soloPlayers: [...soloPlayers, player], registrations: [...champ.registrations, player.id] }
+      }
+
+      if (mode === 'team' && selectedTeamId) {
+        const userTeam = teams.find(t => t.id === selectedTeamId)
+        if (!userTeam) {
+          showToast('Time não encontrado.', 'warn')
+          return champ
+        }
+        if (champTeams.length >= maxTeams) {
+          showToast('Limite de times atingido.', 'warn')
+          return champ
+        }
+        const newTeam = {
+          id: `ct_${Date.now()}`,
+          name: userTeam.name,
+          members: userTeam.members,
+          captain: userTeam.captain
+        }
+        showToast(`Time ${userTeam.name} inscrito!`, 'success')
+        return { 
+          ...champ, 
+          teams: [...champTeams, newTeam], 
+          registrations: [...champ.registrations, ...userTeam.members.map((_, i) => `${newTeam.id}_${i}`)]
+        }
+      }
+
+      if (mode === 'create-team' && newTeamName) {
+        if (champTeams.length >= maxTeams) {
+          showToast('Limite de times atingido.', 'warn')
+          return champ
+        }
+        const newTeam = {
+          id: `ct_${Date.now()}`,
+          name: newTeamName,
+          members: [playerName],
+          captain: playerName,
+          openSlots: playersPerTeam - 1
+        }
+        // Automatically fill with solo players if available
+        const slotsToFill = Math.min(soloPlayers.length, playersPerTeam - 1)
+        const playersToAdd = soloPlayers.slice(0, slotsToFill)
+        const remainingSolo = soloPlayers.slice(slotsToFill)
+        
+        newTeam.members = [playerName, ...playersToAdd.map(p => p.name)]
+        newTeam.openSlots = playersPerTeam - newTeam.members.length
+
+        if (playersToAdd.length > 0) {
+          showToast(`Time ${newTeamName} criado! ${playersToAdd.length} jogador(es) da fila entraram.`, 'success')
+        } else {
+          showToast(`Time ${newTeamName} criado! Aguardando jogadores.`, 'success')
+        }
+
+        return { 
+          ...champ, 
+          teams: [...champTeams, newTeam],
+          soloPlayers: remainingSolo,
+          registrations: [...champ.registrations, player.id, ...playersToAdd.map(p => p.id)]
+        }
+      }
+
+      return champ
+    }))
   }
 
   function handlePerformanceSubmit(eventId, payload) {
@@ -1084,6 +1207,8 @@ export default function App() {
                 openPerformanceModal={openPerformanceModal}
                 userLocation={userLocation}
                 venues={venues}
+                championships={championships}
+                onViewChampionships={() => setView('campeonatos')}
                 onRefreshNearby={() => {
                   setSwipeIndex(0)
                   requestLocation()
@@ -1146,6 +1271,7 @@ export default function App() {
           teams={teams}
           onCreateTeam={createTeamEntry}
           notifyTeam={teamId => notifyTeamMembers(teamId, null, 'Ping manual')}
+          onRespondPing={respondToPing}
         />
       )
     }
@@ -1157,6 +1283,9 @@ export default function App() {
           onAddKid={addKidProfile}
           onCreateChampionship={createChampionshipEntry}
           onEnroll={enrollKidInChampionship}
+          onJoinChampionship={joinChampionship}
+          user={user}
+          teams={teams}
         />
       )
     }
@@ -1228,6 +1357,7 @@ export default function App() {
         onSendMessage={(target, text) => sendChatMessage(target, text)}
       />
       <Toast message={toast.message} type={toast.type} visible={toast.visible} />
+      <MobileNav view={view} setView={setView} />
     </div>
   )
 }
@@ -1242,7 +1372,7 @@ function Header({
   onShowChat,
   unreadCount
 }) {
-  const navItems = ['home', 'stories', 'create', 'teams', 'campeonatos', 'ranking', 'fund', 'inscricoes', 'profile']
+  const navItems = ['home', 'stories', 'create', 'teams', 'campeonatos', 'ranking', 'inscricoes', 'profile']
   if (user?.role === 'master' && !navItems.includes('admin')) navItems.push('admin')
 
   return (
@@ -1264,8 +1394,8 @@ function Header({
       </nav>
       <div className="header-actions">
         <button className="user-pill" onClick={onShowPayments}>
-          {user.name}
-          {user.role === 'master' && ' · Master'}
+          <span className="user-name">{user.name}</span>
+          {user.role === 'master' && <span className="role-badge"> · Master</span>}
         </button>
         <button className="ghost icon-button" onClick={onShowNotifications}>
           🔔
@@ -1275,10 +1405,36 @@ function Header({
           💬
         </button>
         <button className="ghost" onClick={onLogout}>
-          Sair
+          <span className="logout-text">Sair</span>
+          <span className="logout-icon">🚪</span>
         </button>
       </div>
     </header>
+  )
+}
+
+function MobileNav({ view, setView }) {
+  const navItems = [
+    { id: 'home', icon: '🏟️', label: 'Partidas' },
+    { id: 'campeonatos', icon: '🏆', label: 'Campeonatos' },
+    { id: 'create', icon: '➕', label: 'Criar' },
+    { id: 'teams', icon: '👥', label: 'Times' },
+    { id: 'profile', icon: '👤', label: 'Perfil' }
+  ]
+
+  return (
+    <nav className="mobile-nav">
+      {navItems.map(item => (
+        <button
+          key={item.id}
+          className={view === item.id ? 'active' : ''}
+          onClick={() => setView(item.id)}
+        >
+          <span className="nav-icon">{item.icon}</span>
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </nav>
   )
 }
 
@@ -1320,6 +1476,7 @@ function Hero({ setView, onlineCount }) {
           <span>#vôlei</span>
           <span>#basquete</span>
           <span>#futevôlei</span>
+          <span>#Altinha</span>
         </div>
       </div>
       <div className="hero-card">
@@ -1339,6 +1496,22 @@ function Hero({ setView, onlineCount }) {
           <p>Jogadores on-line agora</p>
           <strong>{onlineCount}</strong>
         </div>
+        <div className="card-row">
+          <p>Partidas criadas hoje</p>
+          <strong>32</strong>
+        </div>
+        <div className="card-row">
+          <p>Novos atletas esta semana</p>
+          <strong>+58</strong>
+        </div>
+        <div className="card-row">
+          <p>Comunidades ativas</p>
+          <strong>5 regiões</strong>
+        </div>
+        <div className="card-row">
+          <p>Taxa de confirmação</p>
+          <strong>94%</strong>
+        </div>
       </div>
     </section>
   )
@@ -1353,7 +1526,9 @@ function StoryPanel({ fund }) {
         <li>Escolha esportes e receba partidas em tempo real.</li>
         <li>Entre com um swipe, pague pelo app e garanta a vaga.</li>
         <li>Check-in via foto ou vídeo para pontuar.</li>
-        <li>Uma taxa simbólica abastece o fundo comunitário.</li>
+        <li>Acumule pontos e suba no ranking da comunidade.</li>
+        <li>Vote em melhorias para quadras e locais parceiros.</li>
+        <li>Conecte-se com atletas do seu nível e região.</li>
       </ol>
     </aside>
   )
@@ -1373,6 +1548,8 @@ function HomeView({
   openPerformanceModal,
   userLocation,
   venues,
+  championships,
+  onViewChampionships,
   onRefreshNearby
 }) {
   const [search, setSearch] = useState('')
@@ -1483,6 +1660,35 @@ function HomeView({
           venues={venues}
         />
       </div>
+
+      {championships && championships.length > 0 && (
+        <section className="home-championships">
+          <div className="section-head with-actions">
+            <div>
+              <p className="eyebrow">🏆 Campeonatos</p>
+              <h3>Competições abertas</h3>
+              <p>Inscreva-se e dispute com a galera.</p>
+            </div>
+            <button className="ghost" onClick={onViewChampionships}>Ver todos</button>
+          </div>
+          <div className="champ-preview-grid">
+            {championships.slice(0, 3).map(champ => (
+              <article key={champ.id} className="champ-preview-card" onClick={onViewChampionships}>
+                <div className="champ-preview-header">
+                  <h4>{champ.name}</h4>
+                  <span className="fee-pill">R$ {(Number(champ.fee) || 0).toFixed(2)}</span>
+                </div>
+                <p className="meta">{champ.sport} · {champ.category}</p>
+                {champ.prizes && <p className="champ-prize">🏆 {champ.prizes.slice(0, 50)}{champ.prizes.length > 50 ? '...' : ''}</p>}
+                <div className="champ-preview-footer">
+                  <span>{champ.registrations?.length || 0} inscritos</span>
+                  <span>Início: {new Date(champ.startDate).toLocaleDateString('pt-BR')}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
 
       <VenueMap venues={venues} userLocation={userLocation} />
     </div>
@@ -2009,12 +2215,64 @@ function CreateView({ onCreate, locations, onAddLocation, teams, onCreateTeam, i
 
 function StoriesView({ stories, onAddStory }) {
   const [form, setForm] = useState({ eventName: '', venue: '', beforePhoto: '', afterPhoto: '', caption: '' })
+  const [beforePreview, setBeforePreview] = useState(null)
+  const [afterPreview, setAfterPreview] = useState(null)
   const feed = [...stories].sort((a, b) => b.createdAt - a.createdAt)
+
+  function handleFileChange(e, type) {
+    const file = e.target.files[0]
+    if (!file) return
+    
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const dataUrl = event.target.result
+      if (type === 'before') {
+        setBeforePreview(dataUrl)
+        setForm(prev => ({ ...prev, beforePhoto: dataUrl }))
+      } else {
+        setAfterPreview(dataUrl)
+        setForm(prev => ({ ...prev, afterPhoto: dataUrl }))
+      }
+    }
+    reader.readAsDataURL(file)
+  }
 
   function submit(e) {
     e.preventDefault()
     onAddStory(form)
     setForm({ eventName: '', venue: '', beforePhoto: '', afterPhoto: '', caption: '' })
+    setBeforePreview(null)
+    setAfterPreview(null)
+  }
+
+  async function shareStory(story) {
+    const shareText = `🏆 ${story.eventName}\n📍 ${story.venue}\n\n${story.caption}\n\n#FitHub #Esporte #CheckIn`
+    const shareUrl = window.location.href
+
+    // Try native share (mobile)
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: story.eventName,
+          text: shareText,
+          url: shareUrl
+        })
+        return
+      } catch (err) {
+        if (err.name !== 'AbortError') {
+          console.log('Share cancelled or failed')
+        }
+      }
+    }
+
+    // Fallback: copy to clipboard
+    try {
+      await navigator.clipboard.writeText(shareText + '\n\n' + shareUrl)
+      alert('✅ Texto copiado! Cole no Instagram ou WhatsApp.')
+    } catch (err) {
+      // Last fallback: prompt with text
+      prompt('Copie o texto abaixo para compartilhar:', shareText)
+    }
   }
 
   return (
@@ -2061,7 +2319,7 @@ function StoriesView({ stories, onAddStory }) {
             <p>{story.caption}</p>
             <div className="story-footer">
               <small>{story.venue}</small>
-              <button className="ghost" onClick={() => alert('Link copiado para Stories!')}>
+              <button className="ghost" onClick={() => shareStory(story)}>
                 Compartilhar
               </button>
             </div>
@@ -2076,10 +2334,49 @@ function StoriesView({ stories, onAddStory }) {
           <input value={form.eventName} onChange={e => setForm(prev => ({ ...prev, eventName: e.target.value }))} />
           <label>Quadra / local</label>
           <input value={form.venue} onChange={e => setForm(prev => ({ ...prev, venue: e.target.value }))} />
-          <label>Foto pré-jogo (URL)</label>
-          <input value={form.beforePhoto} onChange={e => setForm(prev => ({ ...prev, beforePhoto: e.target.value }))} />
-          <label>Foto pós-jogo (URL)</label>
-          <input value={form.afterPhoto} onChange={e => setForm(prev => ({ ...prev, afterPhoto: e.target.value }))} />
+          
+          <div className="photo-upload-row">
+            <div className="photo-upload-box">
+              <label>📸 Foto pré-jogo</label>
+              <input 
+                type="file" 
+                accept="image/*" 
+                onChange={e => handleFileChange(e, 'before')}
+                id="before-photo-input"
+              />
+              <label htmlFor="before-photo-input" className="upload-area">
+                {beforePreview ? (
+                  <img src={beforePreview} alt="Preview antes" />
+                ) : (
+                  <div className="upload-placeholder">
+                    <span>📷</span>
+                    <p>Clique para anexar</p>
+                  </div>
+                )}
+              </label>
+            </div>
+            
+            <div className="photo-upload-box">
+              <label>📸 Foto pós-jogo</label>
+              <input 
+                type="file" 
+                accept="image/*" 
+                onChange={e => handleFileChange(e, 'after')}
+                id="after-photo-input"
+              />
+              <label htmlFor="after-photo-input" className="upload-area">
+                {afterPreview ? (
+                  <img src={afterPreview} alt="Preview depois" />
+                ) : (
+                  <div className="upload-placeholder">
+                    <span>📷</span>
+                    <p>Clique para anexar</p>
+                  </div>
+                )}
+              </label>
+            </div>
+          </div>
+
           <label>Legenda</label>
           <textarea value={form.caption} onChange={e => setForm(prev => ({ ...prev, caption: e.target.value }))} />
           <button type="submit" className="primary">
@@ -2091,7 +2388,7 @@ function StoriesView({ stories, onAddStory }) {
   )
 }
 
-function TeamsView({ teams, onCreateTeam, notifyTeam }) {
+function TeamsView({ teams, onCreateTeam, notifyTeam, onRespondPing }) {
   const [form, setForm] = useState({ name: '', sport: 'Futebol 5x5', members: '' })
 
   function submit(e) {
@@ -2108,6 +2405,18 @@ function TeamsView({ teams, onCreateTeam, notifyTeam }) {
     setForm({ name: '', sport: 'Futebol 5x5', members: '' })
   }
 
+  function getResponseIcon(status) {
+    if (status === 'confirmed') return '✅'
+    if (status === 'declined') return '❌'
+    return '⏳'
+  }
+
+  function getResponseLabel(status) {
+    if (status === 'confirmed') return 'Confirmado'
+    if (status === 'declined') return 'Recusou'
+    return 'Aguardando'
+  }
+
   const sortedTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name))
 
   return (
@@ -2120,25 +2429,77 @@ function TeamsView({ teams, onCreateTeam, notifyTeam }) {
       </div>
       {sortedTeams.length === 0 && <EmptyState message="Cadastre o primeiro time." />}
       <div className="team-grid">
-        {sortedTeams.map(team => (
-          <article key={team.id} className="team-card">
-            <div className="team-head">
-              <h4>{team.name}</h4>
-              <span className="team-tag">{team.sport}</span>
-            </div>
-            <p className="meta">Capitão: {team.captain}</p>
-            <div className="team-members">
-              {team.members.map(member => (
-                <span key={member}>{member}</span>
-              ))}
-            </div>
-            <div className="team-actions">
-              <button className="ghost" onClick={() => notifyTeam(team.id)}>
-                Ping do grupo
-              </button>
-            </div>
-          </article>
-        ))}
+        {sortedTeams.map(team => {
+          const hasActivePing = team.lastPing && team.pingResponses
+          const confirmedCount = hasActivePing 
+            ? Object.values(team.pingResponses).filter(r => r === 'confirmed').length 
+            : 0
+          const declinedCount = hasActivePing 
+            ? Object.values(team.pingResponses).filter(r => r === 'declined').length 
+            : 0
+          const pendingCount = hasActivePing 
+            ? Object.values(team.pingResponses).filter(r => r === 'pending').length 
+            : 0
+
+          return (
+            <article key={team.id} className="team-card">
+              <div className="team-head">
+                <h4>{team.name}</h4>
+                <span className="team-tag">{team.sport}</span>
+              </div>
+              <p className="meta">Capitão: {team.captain}</p>
+              
+              <div className="team-members-status">
+                {team.members.map(member => {
+                  const status = team.pingResponses?.[member] || null
+                  return (
+                    <div key={member} className={`member-row ${status || ''}`}>
+                      <span className="member-name">{member}</span>
+                      {status && (
+                        <div className="member-response">
+                          <span className="response-icon">{getResponseIcon(status)}</span>
+                          <span className="response-label">{getResponseLabel(status)}</span>
+                          {status === 'pending' && (
+                            <div className="response-actions">
+                              <button 
+                                className="mini-btn confirm" 
+                                onClick={() => onRespondPing(team.id, member, 'confirmed')}
+                                title="Simular confirmação"
+                              >
+                                ✓
+                              </button>
+                              <button 
+                                className="mini-btn decline" 
+                                onClick={() => onRespondPing(team.id, member, 'declined')}
+                                title="Simular recusa"
+                              >
+                                ✗
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {hasActivePing && (
+                <div className="ping-summary">
+                  <span className="confirmed">✅ {confirmedCount}</span>
+                  <span className="declined">❌ {declinedCount}</span>
+                  <span className="pending">⏳ {pendingCount}</span>
+                </div>
+              )}
+
+              <div className="team-actions">
+                <button className="ghost" onClick={() => notifyTeam(team.id)}>
+                  {hasActivePing ? '🔄 Novo ping' : '📢 Ping do grupo'}
+                </button>
+              </div>
+            </article>
+          )
+        })}
       </div>
       <div className="team-create">
         <h4>Criar novo time</h4>
@@ -2167,17 +2528,30 @@ function TeamsView({ teams, onCreateTeam, notifyTeam }) {
   )
 }
 
-function ChampionshipsView({ kids, championships, onAddKid, onCreateChampionship, onEnroll }) {
+function ChampionshipsView({ kids, championships, onAddKid, onCreateChampionship, onEnroll, onJoinChampionship, user, teams }) {
   const [kidForm, setKidForm] = useState({ name: '', age: '', sport: '', guardian: '' })
   const [champForm, setChampForm] = useState({
     name: '',
     sport: 'Futebol Society',
-    category: 'Sub-11',
-    fee: 25,
+    category: 'Livre',
+    fee: '',
     startDate: '',
-    description: ''
+    description: '',
+    prizes: '',
+    rules: '',
+    maxTeams: 8,
+    playersPerTeam: 5
   })
   const [selection, setSelection] = useState({ champId: '', kidId: '' })
+  const [showKidsSection, setShowKidsSection] = useState(false)
+  const [enrollModal, setEnrollModal] = useState(null) // championship being enrolled
+  const [enrollForm, setEnrollForm] = useState({
+    mode: 'solo', // 'solo' | 'team' | 'create-team'
+    playerName: user?.name || '',
+    playerPhone: '',
+    selectedTeamId: '',
+    newTeamName: ''
+  })
 
   function submitKid(e) {
     e.preventDefault()
@@ -2188,7 +2562,10 @@ function ChampionshipsView({ kids, championships, onAddKid, onCreateChampionship
   function submitChamp(e) {
     e.preventDefault()
     const created = onCreateChampionship(champForm)
-    if (created) setChampForm({ name: '', sport: 'Futebol Society', category: 'Sub-11', fee: 25, startDate: '', description: '' })
+    if (created) setChampForm({ 
+      name: '', sport: 'Futebol Society', category: 'Livre', fee: '', startDate: '', 
+      description: '', prizes: '', rules: '', maxTeams: 8, playersPerTeam: 5 
+    })
   }
 
   function handleEnroll(e) {
@@ -2196,65 +2573,201 @@ function ChampionshipsView({ kids, championships, onAddKid, onCreateChampionship
     onEnroll(selection.champId, selection.kidId)
   }
 
+  function openEnrollModal(champ) {
+    setEnrollModal(champ)
+    setEnrollForm({
+      mode: 'solo',
+      playerName: user?.name || '',
+      playerPhone: '',
+      selectedTeamId: '',
+      newTeamName: ''
+    })
+  }
+
+  function submitEnrollment(e) {
+    e.preventDefault()
+    if (!enrollModal) return
+    onJoinChampionship(enrollModal.id, enrollForm)
+    setEnrollModal(null)
+  }
+
+  function getTeamStatus(champ) {
+    const champTeams = champ.teams || []
+    const soloCount = champ.soloPlayers?.length || 0
+    const filledTeams = champTeams.length
+    const maxTeams = champ.maxTeams || 8
+    const playersPerTeam = champ.playersPerTeam || 5
+    const incompleteTeams = champTeams.filter(t => t.members.length < playersPerTeam)
+    return { filledTeams, maxTeams, playersPerTeam, soloCount, incompleteTeams }
+  }
+
   return (
     <div className="view championships-view">
       <div className="section-head">
         <div>
-          <h3>Campeonatos e categorias kids</h3>
-          <p>Pais e responsáveis cadastram atletas mirins e pagam uma taxa simbólica para disputar.</p>
+          <h3>Campeonatos</h3>
+          <p>Crie e participe de campeonatos relâmpago para qualquer modalidade e categoria.</p>
         </div>
       </div>
       <div className="champ-grid">
-        {championships.map(champ => (
-          <article key={champ.id} className="champ-card">
-            <header>
-              <div>
-                <h4>{champ.name}</h4>
-                <p className="meta">{champ.sport} · {champ.category}</p>
+        {championships.map(champ => {
+          const status = getTeamStatus(champ)
+          return (
+            <article key={champ.id} className="champ-card clickable" onClick={() => openEnrollModal(champ)}>
+              <header>
+                <div>
+                  <h4>{champ.name}</h4>
+                  <p className="meta">{champ.sport} · {champ.category}</p>
+                </div>
+                <span className="fee-pill">R$ {(Number(champ.fee) || 0).toFixed(2)}</span>
+              </header>
+              <p>{champ.description}</p>
+              {champ.prizes && (
+                <div className="champ-info">
+                  <span className="info-icon">🏆</span>
+                  <p>{champ.prizes}</p>
+                </div>
+              )}
+              {champ.rules && (
+                <div className="champ-info">
+                  <span className="info-icon">📋</span>
+                  <p>{champ.rules}</p>
+                </div>
+              )}
+              <p className="meta">Início: {new Date(champ.startDate).toLocaleDateString('pt-BR')}</p>
+              
+              <div className="champ-team-status">
+                <div className="status-item">
+                  <span className="status-label">Times</span>
+                  <span className="status-value">{status.filledTeams}/{status.maxTeams}</span>
+                </div>
+                <div className="status-item">
+                  <span className="status-label">Por time</span>
+                  <span className="status-value">{status.playersPerTeam} jogadores</span>
+                </div>
+                {status.soloCount > 0 && (
+                  <div className="status-item solo">
+                    <span className="status-label">Aguardando time</span>
+                    <span className="status-value">{status.soloCount}</span>
+                  </div>
+                )}
               </div>
-              <span className="fee-pill">R$ {champ.fee.toFixed(2)}</span>
-            </header>
-            <p>{champ.description}</p>
-            <p className="meta">Início: {new Date(champ.startDate).toLocaleDateString('pt-BR')}</p>
-            <div className="champ-registrations">
-              <strong>{champ.registrations.length}</strong>
-              <span>atletas confirmados</span>
-            </div>
-          </article>
-        ))}
+
+              <button className="primary enroll-btn" onClick={(e) => { e.stopPropagation(); openEnrollModal(champ) }}>
+                Inscrever-se
+              </button>
+            </article>
+          )
+        })}
       </div>
+
+      {/* Modal de Inscrição */}
+      {enrollModal && (
+        <div className="modal-overlay" onClick={() => setEnrollModal(null)}>
+          <div className="modal enroll-modal" onClick={e => e.stopPropagation()}>
+            <button className="modal-close" onClick={() => setEnrollModal(null)}>✕</button>
+            <h3>Inscrição: {enrollModal.name}</h3>
+            <p className="meta">{enrollModal.sport} · {enrollModal.category} · R$ {(Number(enrollModal.fee) || 0).toFixed(2)}</p>
+            
+            <form onSubmit={submitEnrollment} className="enroll-form">
+              <div className="input-group">
+                <label>Seu nome completo</label>
+                <input
+                  placeholder="Nome"
+                  value={enrollForm.playerName}
+                  onChange={e => setEnrollForm(prev => ({ ...prev, playerName: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="input-group">
+                <label>Telefone / WhatsApp</label>
+                <input
+                  placeholder="(00) 00000-0000"
+                  value={enrollForm.playerPhone}
+                  onChange={e => setEnrollForm(prev => ({ ...prev, playerPhone: e.target.value }))}
+                  required
+                />
+              </div>
+
+              <div className="enroll-mode-selector">
+                <label>Como deseja participar?</label>
+                <div className="mode-options">
+                  <button
+                    type="button"
+                    className={`mode-btn ${enrollForm.mode === 'solo' ? 'active' : ''}`}
+                    onClick={() => setEnrollForm(prev => ({ ...prev, mode: 'solo' }))}
+                  >
+                    <span className="mode-icon">🎲</span>
+                    <span>Time aleatório</span>
+                    <small>Entro em qualquer time com vaga</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`mode-btn ${enrollForm.mode === 'team' ? 'active' : ''}`}
+                    onClick={() => setEnrollForm(prev => ({ ...prev, mode: 'team' }))}
+                  >
+                    <span className="mode-icon">👥</span>
+                    <span>Meu time</span>
+                    <small>Já tenho um time formado</small>
+                  </button>
+                  <button
+                    type="button"
+                    className={`mode-btn ${enrollForm.mode === 'create-team' ? 'active' : ''}`}
+                    onClick={() => setEnrollForm(prev => ({ ...prev, mode: 'create-team' }))}
+                  >
+                    <span className="mode-icon">➕</span>
+                    <span>Criar time</span>
+                    <small>Criar novo e abrir vagas</small>
+                  </button>
+                </div>
+              </div>
+
+              {enrollForm.mode === 'solo' && (
+                <div className="enroll-info-box">
+                  <p>🎲 Você será alocado automaticamente em um time que precise de jogadores, ou aguardará na fila até um time abrir vaga.</p>
+                </div>
+              )}
+
+              {enrollForm.mode === 'team' && (
+                <div className="input-group">
+                  <label>Selecione seu time</label>
+                  <select
+                    value={enrollForm.selectedTeamId}
+                    onChange={e => setEnrollForm(prev => ({ ...prev, selectedTeamId: e.target.value }))}
+                    required
+                  >
+                    <option value="">Escolha um time...</option>
+                    {teams.map(t => (
+                      <option key={t.id} value={t.id}>{t.name} ({t.members.length} membros)</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {enrollForm.mode === 'create-team' && (
+                <div className="input-group">
+                  <label>Nome do novo time</label>
+                  <input
+                    placeholder="Ex: Tigres FC"
+                    value={enrollForm.newTeamName}
+                    onChange={e => setEnrollForm(prev => ({ ...prev, newTeamName: e.target.value }))}
+                    required
+                  />
+                  <small className="meta">Você será o capitão. Outros jogadores solo poderão entrar para completar o time.</small>
+                </div>
+              )}
+
+              <button type="submit" className="primary full-width">
+                Confirmar inscrição - R$ {(Number(enrollModal.fee) || 0).toFixed(2)}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
       <div className="registration-box">
         <div>
-          <h4>1. Cadastre seu filho(a)</h4>
-          <form onSubmit={submitKid} className="kid-form">
-            <input
-              placeholder="Nome completo"
-              value={kidForm.name}
-              onChange={e => setKidForm(prev => ({ ...prev, name: e.target.value }))}
-            />
-            <input
-              placeholder="Idade"
-              type="number"
-              value={kidForm.age}
-              onChange={e => setKidForm(prev => ({ ...prev, age: e.target.value }))}
-            />
-            <input
-              placeholder="Modalidade favorita"
-              value={kidForm.sport}
-              onChange={e => setKidForm(prev => ({ ...prev, sport: e.target.value }))}
-            />
-            <input
-              placeholder="Responsável"
-              value={kidForm.guardian}
-              onChange={e => setKidForm(prev => ({ ...prev, guardian: e.target.value }))}
-            />
-            <button className="primary" type="submit">
-              Salvar atleta kids
-            </button>
-          </form>
-        </div>
-        <div>
-          <h4>2. Criar campeonato relâmpago</h4>
+          <h4>Criar campeonato</h4>
           <form onSubmit={submitChamp} className="champ-form">
             <input
               placeholder="Nome do campeonato"
@@ -2266,24 +2779,78 @@ function ChampionshipsView({ kids, championships, onAddKid, onCreateChampionship
               value={champForm.sport}
               onChange={e => setChampForm(prev => ({ ...prev, sport: e.target.value }))}
             />
-            <input
-              placeholder="Categoria (ex.: Sub-9)"
+            <select
               value={champForm.category}
               onChange={e => setChampForm(prev => ({ ...prev, category: e.target.value }))}
-            />
-            <input
-              placeholder="Taxa simbólica"
-              type="number"
-              value={champForm.fee}
-              onChange={e => setChampForm(prev => ({ ...prev, fee: e.target.value }))}
-            />
-            <input
-              type="date"
-              value={champForm.startDate}
-              onChange={e => setChampForm(prev => ({ ...prev, startDate: e.target.value }))}
-            />
+            >
+              <option value="Livre">Livre (todas as idades)</option>
+              <option value="Adulto">Adulto (18+)</option>
+              <option value="Sub-17">Sub-17</option>
+              <option value="Sub-15">Sub-15</option>
+              <option value="Sub-13">Sub-13</option>
+              <option value="Sub-11">Sub-11</option>
+              <option value="Sub-9">Sub-9</option>
+              <option value="Master">Master (40+)</option>
+            </select>
+            <div className="input-group">
+              <label>Taxa de inscrição por atleta (R$)</label>
+              <input
+                placeholder="Ex: 25.00"
+                type="number"
+                step="0.01"
+                min="0"
+                value={champForm.fee}
+                onChange={e => setChampForm(prev => ({ ...prev, fee: e.target.value }))}
+              />
+            </div>
+            <div className="input-group">
+              <label>Data de início: </label>
+              <input
+                type="date"
+                value={champForm.startDate}
+                onChange={e => setChampForm(prev => ({ ...prev, startDate: e.target.value }))}
+              />
+            </div>
+            <div className="input-group">
+              <label>🏆 Prêmios e troféus: </label>
+              <textarea
+                placeholder="Ex: 1º lugar: Troféu + R$500 | 2º lugar: Medalha + R$200 | 3º lugar: Medalha"
+                value={champForm.prizes}
+                onChange={e => setChampForm(prev => ({ ...prev, prizes: e.target.value }))}
+              />
+            </div>
+            <div className="input-group">
+              <label>📋 Regras do campeonato: </label>
+              <textarea
+                placeholder="Ex: Jogos de 2 tempos de 15min, cartão vermelho = suspensão de 1 jogo..."
+                value={champForm.rules}
+                onChange={e => setChampForm(prev => ({ ...prev, rules: e.target.value }))}
+              />
+            </div>
+            <div className="input-row">
+              <div className="input-group">
+                <label>Limite de times</label>
+                <input
+                  type="number"
+                  min="2"
+                  max="32"
+                  value={champForm.maxTeams}
+                  onChange={e => setChampForm(prev => ({ ...prev, maxTeams: e.target.value }))}
+                />
+              </div>
+              <div className="input-group">
+                <label>Jogadores por time</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="22"
+                  value={champForm.playersPerTeam}
+                  onChange={e => setChampForm(prev => ({ ...prev, playersPerTeam: e.target.value }))}
+                />
+              </div>
+            </div>
             <textarea
-              placeholder="Descrição / regulamento"
+              placeholder="Descrição geral / informações adicionais"
               value={champForm.description}
               onChange={e => setChampForm(prev => ({ ...prev, description: e.target.value }))}
             />
@@ -2293,33 +2860,77 @@ function ChampionshipsView({ kids, championships, onAddKid, onCreateChampionship
           </form>
         </div>
       </div>
-      <div className="enroll-box">
-        <h4>3. Vincular atleta ao campeonato</h4>
-        <form onSubmit={handleEnroll}>
-          <select value={selection.kidId} onChange={e => setSelection(prev => ({ ...prev, kidId: e.target.value }))}>
-            <option value="">Selecione o atleta</option>
-            {kids.map(kid => (
-              <option key={kid.id} value={kid.id}>
-                {kid.name} · {kid.age} anos
-              </option>
-            ))}
-          </select>
-          <select value={selection.champId} onChange={e => setSelection(prev => ({ ...prev, champId: e.target.value }))}>
-            <option value="">Selecione o campeonato</option>
-            {championships.map(champ => (
-              <option key={champ.id} value={champ.id}>
-                {champ.name}
-              </option>
-            ))}
-          </select>
-          <button className="primary" type="submit">
-            Confirmar vaga kids
-          </button>
-        </form>
-        <p className="meta">
-          Pagamento simbólico é processado via app e repassa verba para arbitragem e materiais.
-        </p>
+
+      <div className="kids-toggle">
+        <button 
+          className={showKidsSection ? 'secondary' : 'ghost'} 
+          onClick={() => setShowKidsSection(!showKidsSection)}
+        >
+          {showKidsSection ? 'Ocultar seção Kids' : 'Cadastrar atleta kids'}
+        </button>
       </div>
+
+      {showKidsSection && (
+        <div className="registration-box kids-box">
+          <div>
+            <h4>Cadastrar atleta kids</h4>
+            <p className="meta">Para menores de idade, pais e responsáveis cadastram e acompanham.</p>
+            <form onSubmit={submitKid} className="kid-form">
+              <input
+                placeholder="Nome completo"
+                value={kidForm.name}
+                onChange={e => setKidForm(prev => ({ ...prev, name: e.target.value }))}
+              />
+              <input
+                placeholder="Idade"
+                type="number"
+                value={kidForm.age}
+                onChange={e => setKidForm(prev => ({ ...prev, age: e.target.value }))}
+              />
+              <input
+                placeholder="Modalidade favorita"
+                value={kidForm.sport}
+                onChange={e => setKidForm(prev => ({ ...prev, sport: e.target.value }))}
+              />
+              <input
+                placeholder="Nome do responsável"
+                value={kidForm.guardian}
+                onChange={e => setKidForm(prev => ({ ...prev, guardian: e.target.value }))}
+              />
+              <button className="primary" type="submit">
+                Salvar atleta kids
+              </button>
+            </form>
+          </div>
+          <div>
+            <h4>Vincular atleta ao campeonato</h4>
+            <form onSubmit={handleEnroll}>
+              <select value={selection.kidId} onChange={e => setSelection(prev => ({ ...prev, kidId: e.target.value }))}>
+                <option value="">Selecione o atleta</option>
+                {kids.map(kid => (
+                  <option key={kid.id} value={kid.id}>
+                    {kid.name} · {kid.age} anos
+                  </option>
+                ))}
+              </select>
+              <select value={selection.champId} onChange={e => setSelection(prev => ({ ...prev, champId: e.target.value }))}>
+                <option value="">Selecione o campeonato</option>
+                {championships.map(champ => (
+                  <option key={champ.id} value={champ.id}>
+                    {champ.name} ({champ.category})
+                  </option>
+                ))}
+              </select>
+              <button className="primary" type="submit">
+                Confirmar inscrição
+              </button>
+            </form>
+            <p className="meta">
+              Pagamento é processado via app e repassa verba para arbitragem e materiais.
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -2350,7 +2961,7 @@ function RankingView({ ranking, user }) {
     <div className="view">
       <div className="section-head">
         <div>
-          <h3>Ranking mensal</h3>
+          <h3>Ranking</h3>
           <p>Quem joga mais, pontua mais e destrava brindes.</p>
         </div>
       </div>
