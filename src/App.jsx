@@ -1355,10 +1355,6 @@ function StoryPanel({ fund }) {
         <li>Check-in via foto ou vídeo para pontuar.</li>
         <li>Uma taxa simbólica abastece o fundo comunitário.</li>
       </ol>
-      <div className="fund-pill">
-        Fundo comunitário atual
-        <span>R$ {fund.toFixed(2)}</span>
-      </div>
     </aside>
   )
 }
