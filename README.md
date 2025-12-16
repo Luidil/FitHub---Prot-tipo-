@@ -1,6 +1,6 @@
 # FitHub — App Mobile
 
-Aplicativo mobile esportivo inspirado em um "Tinder do esporte" para combinar jogos, registrar presença e movimentar campeonatos comunitários em Salvador. Disponível para **Android**, **iOS** e **Web**.
+Aplicativo mobile esportivo para combinar jogos, registrar presença e movimentar campeonatos comunitários. Disponível para **Android**, **iOS** e **Web**.
 
 ## 📱 Download
 
