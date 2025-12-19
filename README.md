@@ -8,6 +8,11 @@ Aplicativo mobile esportivo para combinar jogos, registrar presença e movimenta
 - **iOS:** [App Store](#) _(em breve)_
 - **Web:** [fithub.app](#) _(em breve)_
 
+
+No PC (mesma máquina): http://localhost:5173/
+No celular Android (Chrome) na mesma rede Wi‑Fi: http://192.168.11.52:5173/
+No emulador Android: http://10.0.2.2:5173/ (porta 5173)
+
 ## 🚀 Acesso rápido
 
 - **Login demo:** `Lucas Santiago`
