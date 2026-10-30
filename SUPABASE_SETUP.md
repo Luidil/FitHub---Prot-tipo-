@@ -3,7 +3,7 @@
 ## 1. Criar as Tabelas
 
 1. Acesse o [Supabase Dashboard](https://supabase.com/dashboard)
-2. Vá para o projeto: `lwzdkfwemrpejxqlzhgl`
+2. Vá para o projeto: `SEU-PROJETO`
 3. Clique em **SQL Editor** no menu lateral
 4. Copie o conteúdo de `db/supabase-schema.sql`
 5. Cole no editor e clique em **Run**
@@ -139,6 +139,6 @@ function useHybridData(key, supabaseTable) {
 
 ## 8. URLs Úteis
 
-- **Dashboard**: https://supabase.com/dashboard/project/lwzdkfwemrpejxqlzhgl
-- **API Docs**: https://supabase.com/dashboard/project/lwzdkfwemrpejxqlzhgl/api
-- **SQL Editor**: https://supabase.com/dashboard/project/lwzdkfwemrpejxqlzhgl/sql
+- **Dashboard**: https://supabase.com/dashboard/project/SEU-PROJETO
+- **API Docs**: https://supabase.com/dashboard/project/SEU-PROJETO/api
+- **SQL Editor**: https://supabase.com/dashboard/project/SEU-PROJETO/sql

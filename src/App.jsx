@@ -6,6 +6,7 @@ import markerIcon from 'leaflet/dist/images/marker-icon.png'
 import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from './supabase'
+import OrganizerView from './billing/OrganizerView'
 
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
@@ -303,22 +304,6 @@ const DISCOUNT_PLAN = {
   promoValue: 3.5,
   requirement: 'Usar por 4 semanas seguidas'
 }
-const AUTH_USER = {
-  id: 'lucas',
-  name: 'Lucas Santiago',
-  city: 'Salvador',
-  role: 'player'
-}
-const AUTH_PASSWORD = '123'
-
-const AUTH_MASTER = {
-  id: 'admin',
-  name: 'Luidil Gois',
-  city: 'Salvador',
-  role: 'master'
-}
-const MASTER_PASSWORD = '123'
-
 const STORAGE_KEYS = {
   events: 'demo_events',
   joined: 'demo_joined',
@@ -757,8 +742,7 @@ export default function App() {
       return
     }
     
-    console.log('Tentando autenticação:', { email, isRegister })
-    
+        
     try {
       if (isRegister) {
         // Cadastrar novo usuário
@@ -770,8 +754,7 @@ export default function App() {
           }
         })
         
-        console.log('Resultado signUp:', { data, error })
-        
+                
         if (error) throw error
         
         if (data?.user?.identities?.length === 0) {
@@ -791,8 +774,7 @@ export default function App() {
         password
       })
       
-      console.log('Resultado signIn:', { data, error })
-      
+            
       if (error) throw error
       
       setView('home')
@@ -1025,7 +1007,7 @@ export default function App() {
     if (!trimmed) return
     const payload = {
       id: `chat_${Date.now()}`,
-      from: AUTH_USER.name,
+      from: user?.name || 'Você',
       to: targetName || 'Feed',
       text: trimmed,
       timestamp: Date.now()
@@ -1040,7 +1022,7 @@ export default function App() {
   function addStoryEntry({ eventName, venue, beforePhoto, afterPhoto, caption }) {
     const payload = {
       id: `story_${Date.now()}`,
-      athlete: user?.name || AUTH_USER.name,
+      athlete: user?.name || 'Atleta',
       eventName: eventName || 'Treino livre',
       venue: venue || user?.city || 'Salvador',
       beforePhoto: beforePhoto || 'https://images.unsplash.com/photo-1517927033932-b3d18e61fb3a?auto=format&fit=crop&w=500&q=80',
@@ -1542,6 +1524,7 @@ export default function App() {
         />
       )
     }
+    if (view === 'organizador') return <OrganizerView user={user} showToast={showToast} />
     if (view === 'admin') {
       return user?.role === 'master' ? (
         <AdminView
@@ -1647,6 +1630,7 @@ export default function App() {
         onClear={clearNotifications}
       />
       <ChatModal
+        currentUserName={user?.name}
         open={showChat}
         onClose={() => {
           setShowChat(false)
@@ -1675,7 +1659,7 @@ function Header({
   onShowChat,
   unreadCount
 }) {
-  const navItems = ['home', 'stories', 'create', 'teams', 'campeonatos', 'ranking', 'inscricoes', 'profile']
+  const navItems = ['home', 'stories', 'create', 'teams', 'campeonatos', 'organizador', 'ranking', 'inscricoes', 'profile']
   if (user?.role === 'master' && !navItems.includes('admin')) navItems.push('admin')
 
   return (
@@ -1721,7 +1705,7 @@ function MobileNav({ view, setView }) {
     { id: 'home', icon: '🏟️', label: 'Partidas' },
     { id: 'campeonatos', icon: '🏆', label: 'Campeonatos' },
     { id: 'create', icon: '➕', label: 'Criar' },
-    { id: 'teams', icon: '👥', label: 'Times' },
+    { id: 'organizador', icon: '💰', label: 'Gestão' },
     { id: 'profile', icon: '👤', label: 'Perfil' }
   ]
 
@@ -1751,6 +1735,7 @@ function labelFor(item) {
     ranking: 'Ranking',
     fund: 'Fundo',
     inscricoes: 'Inscrições',
+    organizador: 'Gestão',
     profile: 'Perfil',
     admin: 'Master'
   }[item]
@@ -3609,7 +3594,8 @@ function ChatModal({
   activeFriend,
   onSelectFriend,
   onAddFriend,
-  onSendMessage
+  onSendMessage,
+  currentUserName
 }) {
   const [friendName, setFriendName] = useState('')
   const [message, setMessage] = useState('')
@@ -3693,7 +3679,7 @@ function ChatModal({
               {filteredMessages.map(msg => (
                 <div
                   key={msg.id}
-                  className={`chat-message ${msg.from === AUTH_USER.name ? 'me' : ''}`}
+                  className={`chat-message ${msg.from === (currentUserName || 'Você') ? 'me' : ''}`}
                 >
                   <div>
                     <strong>{msg.from}</strong>

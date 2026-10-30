@@ -1,6 +1,16 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabaseUrl = 'https://lwzdkfwemrpejxqlzhgl.supabase.co'
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx3emRrZndlbXJwZWp4cWx6aGdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU1MDY3NjMsImV4cCI6MjA4MTA4Mjc2M30.IqQIVh4NC0khWxvPfjRg2vhR3oA1nk11tB5hyAIuazM'
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-export const supabase = createClient(supabaseUrl, supabaseKey)
+export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseKey)
+
+if (!isSupabaseConfigured) {
+  console.error('FitHub: defina VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no arquivo .env (veja .env.example).')
+}
+
+// Cliente com valores fictícios quando não configurado, para a UI exibir o aviso em vez de quebrar.
+export const supabase = createClient(
+  supabaseUrl || 'https://nao-configurado.supabase.co',
+  supabaseKey || 'chave-nao-configurada'
+)
