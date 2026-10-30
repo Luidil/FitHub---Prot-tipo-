@@ -1,4 +1,4 @@
-import { adminClient, env, getProvider, markPaid, mercadoPagoGet, readBody, send } from '../_lib/server.js'
+import { adminClient, env, getProvider, markAnyPaid, mercadoPagoGet, readBody, send } from '../_lib/server.js'
 
 // Webhook dos provedores. Configure a URL: https://SEU-APP.vercel.app/api/pix/webhook?provider=mercadopago|asaas
 export default async function handler(req, res) {
@@ -13,7 +13,7 @@ export default async function handler(req, res) {
       if (!paymentId || (body.type && body.type !== 'payment')) return send(res, 200, { ignored: true })
       // Nunca confia no corpo: consulta o pagamento direto na API do Mercado Pago.
       const p = await mercadoPagoGet(paymentId)
-      if (p.status === 'approved' && p.external_reference) await markPaid(db, p.external_reference, p.id)
+      if (p.status === 'approved' && p.external_reference) await markAnyPaid(db, p.external_reference, p.id)
       return send(res, 200, { ok: true, status: p.status })
     }
 
@@ -23,7 +23,7 @@ export default async function handler(req, res) {
       const ev = body?.event
       const pay = body?.payment
       if (['PAYMENT_RECEIVED', 'PAYMENT_CONFIRMED'].includes(ev) && pay?.externalReference) {
-        await markPaid(db, pay.externalReference, pay.id)
+        await markAnyPaid(db, pay.externalReference, pay.id)
       }
       return send(res, 200, { ok: true })
     }

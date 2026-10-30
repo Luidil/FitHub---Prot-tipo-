@@ -98,3 +98,14 @@ No app nativo, defina `VITE_PUBLIC_APP_URL` para os links de pagamento apontarem
 - Nenhuma chave fica no código: tudo vem de variáveis de ambiente (`.env` está no `.gitignore`).
 - `SUPABASE_SERVICE_ROLE_KEY` e as chaves dos provedores só existem nas funções `/api`.
 - RLS: cada organizador só vê os próprios atletas, cobranças e agenda; a página pública expõe só os dados de uma cobrança pelo UUID.
+
+## Modo SaaS (vender para escolinhas, várzea e quadras)
+
+- **Landing page**: quem não está logado vê a página de vendas (planos, teste grátis, WhatsApp). `/?entrar` abre direto o login.
+- **Planos**: Básico R$ 49,90 (até 50 atletas) e Pro R$ 89,90 (até 200). Preços em `src/saas/plans.js` e `api/_lib/plans.js`.
+- **Teste grátis de 14 dias** criado automaticamente com a organização. Plano e validade só mudam pelo servidor (trigger protege).
+- **Limite suave**: o app avisa e bloqueia novos atletas acima do limite ou com plano vencido; o banco só bloqueia abuso (2x o limite).
+- **Assinatura por Pix**: aba *Gestão → Plano* chama `/api/saas/subscribe`. O Pix cai na conta da plataforma (mesmo `PIX_PROVIDER`); o webhook `/api/pix/webhook` reconhece `saas:<id>` e libera 30 dias. Sem chaves = modo teste com botão "Simular pagamento".
+- **Onboarding**: novo usuário sem organização vai direto para a Gestão, com checklist de primeiros passos.
+- Variável nova: `VITE_SALES_WHATSAPP` (seu número com DDI, ex.: 5571999999999).
+- Rode também a migration `supabase/migrations/20261030000003_rls_e_saas.sql` (corrige RLS das tabelas antigas).

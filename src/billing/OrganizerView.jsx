@@ -3,6 +3,7 @@ import { supabase } from '../supabase'
 import { callApi } from './api'
 import { buildPixCopyPaste, chargeStatus, formatBRL, payLink, todayISO, whatsappReminderLink } from './pix'
 import './billing.css'
+import { PLANS, planState, salesWhatsAppLink } from '../saas/plans'
 
 const KIND_LABEL = { escolinha: 'Escolinha', campeonato: 'Organizador de campeonato', quadra: 'Quadra / Arena', time: 'Time de várzea' }
 const CHARGE_KIND = { mensalidade: 'Mensalidade', inscricao_campeonato: 'Inscrição em campeonato', inscricao_jogo: 'Inscrição em jogo', aluguel_quadra: 'Aluguel de quadra', outro: 'Outro' }
@@ -57,22 +58,33 @@ export default function OrganizerView({ user, showToast }) {
 
   if (loading) return <section className="view billing"><p className="lead">Carregando gestão...</p></section>
   if (error) return <section className="view billing"><div className="b-card b-error">{error}</div><button className="primary" onClick={loadAll}>Tentar de novo</button></section>
-  if (!org) return <OrgForm user={user} onSaved={loadAll} toast={toast} />
+  if (!org) return (
+    <section className="view billing">
+      <div className="b-steps"><span className="on">1. Sua organização</span><span>2. Primeiro atleta</span><span>3. Primeira cobrança</span></div>
+      <p className="lead">Bem-vindo ao FitHub! Você tem <b>14 dias grátis</b> com todos os recursos. Comece cadastrando sua escolinha, campeonato ou quadra.</p>
+      <OrgForm user={user} onSaved={loadAll} toast={toast} embedded />
+    </section>
+  )
 
-  const tabs = [['resumo', 'Resumo'], ['atletas', 'Atletas'], ['cobrancas', 'Cobranças'], ['agenda', 'Agenda'], ['config', 'Configurações']]
+  const ps = planState(org)
+  const activeCount = athletes.filter(a => a.active).length
+  const tabs = [['resumo', 'Resumo'], ['atletas', 'Atletas'], ['cobrancas', 'Cobranças'], ['agenda', 'Agenda'], ['plano', 'Plano'], ['config', 'Configurações']]
   return (
     <section className="view billing">
       <div className="section-head">
         <p className="eyebrow">{KIND_LABEL[org.kind]}</p>
         <h2>{org.name}</h2>
       </div>
+      <PlanBanner ps={ps} activeCount={activeCount} goPlan={() => setTab('plano')} />
+      {!org.onboarding_done && <Onboarding org={org} athletes={athletes} charges={charges} setTab={setTab} reload={loadAll} toast={toast} />}
       <div className="b-tabs">
         {tabs.map(([id, label]) => (
           <button key={id} className={tab === id ? 'active' : ''} onClick={() => setTab(id)}>{label}</button>
         ))}
       </div>
       {tab === 'resumo' && <Summary org={org} charges={charges} athletes={athletes} schedule={schedule} goCharges={() => setTab('cobrancas')} />}
-      {tab === 'atletas' && <Athletes org={org} athletes={athletes} reload={loadAll} toast={toast} />}
+      {tab === 'plano' && <PlanTab org={org} ps={ps} activeCount={activeCount} reload={loadAll} toast={toast} />}
+      {tab === 'atletas' && <Athletes org={org} ps={ps} athletes={athletes} reload={loadAll} toast={toast} />}
       {tab === 'cobrancas' && <Charges org={org} athletes={athletes} charges={charges} reload={loadAll} toast={toast} />}
       {tab === 'agenda' && <Schedule org={org} items={schedule} reload={loadAll} toast={toast} />}
       {tab === 'config' && <OrgForm user={user} org={org} onSaved={loadAll} toast={toast} />}
@@ -80,7 +92,7 @@ export default function OrganizerView({ user, showToast }) {
   )
 }
 
-function OrgForm({ user, org, onSaved, toast }) {
+function OrgForm({ user, org, onSaved, toast, embedded }) {
   const [f, setF] = useState(org || { name: '', kind: 'escolinha', city: 'Salvador', whatsapp: '', pix_key: '', pix_merchant_name: '', default_fee: '', default_due_day: 10 })
   const [saving, setSaving] = useState(false)
   const up = (k, v) => setF(p => ({ ...p, [k]: v }))
@@ -104,8 +116,8 @@ function OrgForm({ user, org, onSaved, toast }) {
   }
 
   return (
-    <section className={org ? '' : 'view billing'}>
-      {!org && (
+    <section className={org || embedded ? '' : 'view billing'}>
+      {!org && !embedded && (
         <div className="section-head">
           <p className="eyebrow">Gestão e cobrança</p>
           <h2>Cadastre sua escolinha, campeonato ou quadra</h2>
@@ -160,7 +172,7 @@ function Summary({ charges, athletes, schedule, goCharges }) {
   )
 }
 
-function Athletes({ org, athletes, reload, toast }) {
+function Athletes({ org, ps, athletes, reload, toast }) {
   const empty = { name: '', phone: '', guardian_name: '', category: '', monthly_fee: '', due_day: '' }
   const [f, setF] = useState(empty)
   const [editing, setEditing] = useState(null)
@@ -169,6 +181,10 @@ function Athletes({ org, athletes, reload, toast }) {
   async function save(e) {
     e.preventDefault()
     if (!f.name.trim()) return toast('Informe o nome do atleta.', 'warn')
+    if (!editing && ps) {
+      if (!ps.active) return toast('Seu plano/teste expirou. Assine na aba Plano para cadastrar novos atletas.', 'warn')
+      if (athletes.filter(a => a.active).length >= ps.limit) return toast(`Limite de ${ps.limit} atletas do seu plano atingido. Faça upgrade na aba Plano.`, 'warn')
+    }
     const payload = {
       organization_id: org.id, name: f.name.trim(), phone: f.phone, guardian_name: f.guardian_name, category: f.category,
       monthly_fee: f.monthly_fee === '' ? null : Number(f.monthly_fee), due_day: f.due_day === '' ? null : Number(f.due_day)
@@ -438,6 +454,119 @@ function Schedule({ org, items, reload, toast }) {
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function PlanBanner({ ps, activeCount, goPlan }) {
+  if (!ps) return null
+  let msg = null
+  if (ps.plan === 'trial') msg = ps.active ? `Teste grátis: faltam ${ps.daysLeft} dia(s).` : 'Seu teste grátis acabou.'
+  else if (!ps.active) msg = `Seu plano ${ps.label} venceu.`
+  else if (ps.daysLeft <= 5) msg = `Seu plano ${ps.label} vence em ${ps.daysLeft} dia(s).`
+  if (activeCount >= ps.limit) msg = (msg ? msg + ' ' : '') + `Você atingiu ${activeCount}/${ps.limit} atletas.`
+  if (!msg) return null
+  return (
+    <div className={`b-card b-banner ${ps.active ? '' : 'b-error'}`}>
+      <span>{msg}</span> <button className="primary small" onClick={goPlan}>Ver planos</button>
+    </div>
+  )
+}
+
+function Onboarding({ org, athletes, charges, setTab, reload, toast }) {
+  const steps = [
+    { done: true, label: 'Organização criada', tab: 'config' },
+    { done: !!org.pix_key, label: 'Cadastrar sua chave Pix', tab: 'config' },
+    { done: athletes.length > 0, label: 'Cadastrar o primeiro atleta', tab: 'atletas' },
+    { done: charges.length > 0, label: 'Gerar a primeira cobrança', tab: 'cobrancas' }
+  ]
+  async function finish() {
+    const { error } = await supabase.from('organizations').update({ onboarding_done: true }).eq('id', org.id)
+    if (error) return toast('Erro: ' + error.message, 'error')
+    reload()
+  }
+  const all = steps.every(s => s.done)
+  return (
+    <div className="b-card b-onboarding">
+      <strong>Primeiros passos</strong>
+      <ul>
+        {steps.map(s => (
+          <li key={s.label} className={s.done ? 'done' : ''}>
+            {s.done ? '✅' : '⬜'} {s.label} {!s.done && <button className="link" onClick={() => setTab(s.tab)}>fazer agora</button>}
+          </li>
+        ))}
+      </ul>
+      <button className={all ? 'primary small' : 'ghost small'} onClick={finish}>{all ? 'Concluir' : 'Ocultar'}</button>
+    </div>
+  )
+}
+
+function PlanTab({ org, ps, activeCount, reload, toast }) {
+  const [inv, setInv] = useState(null)
+  const [busy, setBusy] = useState('')
+  const [cpf, setCpf] = useState('')
+  const [history, setHistory] = useState([])
+
+  async function loadHistory() {
+    const { data } = await supabase.from('saas_invoices').select('*').eq('organization_id', org.id).order('created_at', { ascending: false }).limit(12)
+    setHistory(data || [])
+  }
+  useEffect(() => { loadHistory() }, [org.id])
+
+  async function subscribe(plan) {
+    setBusy(plan)
+    try {
+      const r = await callApi('saas/subscribe', { plan, cpf: cpf || undefined })
+      setInv({ ...r.invoice, provider: r.provider })
+      loadHistory()
+    } catch (e) { toast(e.message, 'error') } finally { setBusy('') }
+  }
+  async function simulate() {
+    try {
+      await callApi('saas/subscribe', { simulate: inv.id })
+      toast('Pagamento simulado! Plano ativado por 30 dias.', 'success')
+      setInv(null); reload()
+    } catch (e) { toast(e.message, 'error') }
+  }
+  const exp = org.plan === 'trial' ? org.trial_ends_at : org.plan_expires_at
+
+  return (
+    <div>
+      <div className="b-card">
+        <p>Plano atual: <b>{ps.label}</b> · {activeCount}/{ps.limit} atletas ativos {exp && <>· válido até <b>{new Date(exp).toLocaleDateString('pt-BR')}</b></>}</p>
+      </div>
+      <div className="b-plans">
+        {Object.values(PLANS).map(p => (
+          <div key={p.id} className={`b-card b-plan ${org.plan === p.id ? 'current' : ''}`}>
+            <h3>{p.name}</h3>
+            <p className="b-price">{formatBRL(p.price)}<small>/mês</small></p>
+            <ul>{p.features.map(f => <li key={f}>✔ {f}</li>)}</ul>
+            <button className="primary" disabled={!!busy} onClick={() => subscribe(p.id)}>
+              {busy === p.id ? 'Gerando Pix...' : org.plan === p.id ? 'Renovar 30 dias' : 'Assinar com Pix'}
+            </button>
+          </div>
+        ))}
+      </div>
+      <label className="b-form">CPF/CNPJ (só se o pagamento for via Asaas)<input value={cpf} onChange={e => setCpf(e.target.value)} /></label>
+      {inv && (
+        <div className="b-card">
+          <strong>Pague com Pix para ativar o plano {PLANS[inv.plan]?.name}</strong>
+          {inv.pix_qr_base64
+            ? <img alt="QR Pix" src={`data:image/png;base64,${inv.pix_qr_base64}`} style={{ width: 200 }} />
+            : inv.provider !== 'mock' && inv.pix_copy_paste && <img alt="QR Pix" src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(inv.pix_copy_paste)}`} />}
+          <textarea readOnly value={inv.pix_copy_paste || ''} rows={3} style={{ width: '100%' }} />
+          <button className="ghost" onClick={() => navigator.clipboard?.writeText(inv.pix_copy_paste || '')}>Copiar código</button>
+          {inv.provider === 'mock' && <button className="primary" onClick={simulate}>Simular pagamento (modo teste)</button>}
+          <p className="lead">A liberação é automática quando o Pix é confirmado.</p>
+        </div>
+      )}
+      {history.length > 0 && (
+        <div className="b-card">
+          <strong>Faturas</strong>
+          <ul>{history.map(h => <li key={h.id}>{new Date(h.created_at).toLocaleDateString('pt-BR')} · {PLANS[h.plan]?.name} · {formatBRL(h.amount)} · {h.status}</li>)}</ul>
+        </div>
+      )}
+      <p><a href={salesWhatsAppLink('Olá! Tenho dúvidas sobre o plano do FitHub.')} target="_blank" rel="noreferrer">Falar com a gente no WhatsApp</a></p>
     </div>
   )
 }

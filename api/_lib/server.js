@@ -49,6 +49,31 @@ export async function loadOwnedCharge(req, db, chargeId) {
   return charge
 }
 
+// Assinatura SaaS: external_reference = "saas:<invoiceId>"
+export async function markSaasPaid(db, invoiceId, providerPaymentId) {
+  const { data: inv } = await db.from('saas_invoices').select('*, organizations(plan_expires_at)').eq('id', invoiceId).single()
+  if (!inv || inv.status === 'pago') return
+  if (providerPaymentId && inv.provider_payment_id && String(inv.provider_payment_id) !== String(providerPaymentId)) return
+  await db.from('saas_invoices').update({ status: 'pago', paid_at: new Date().toISOString() }).eq('id', invoiceId)
+  const cur = inv.organizations?.plan_expires_at ? new Date(inv.organizations.plan_expires_at) : null
+  const start = cur && cur > new Date() ? cur : new Date()
+  const exp = new Date(start.getTime() + 30 * 86400000)
+  await db.from('organizations').update({ plan: inv.plan, plan_expires_at: exp.toISOString() }).eq('id', inv.organization_id)
+}
+
+export async function markAnyPaid(db, ref, providerPaymentId) {
+  if (String(ref).startsWith('saas:')) return markSaasPaid(db, String(ref).slice(5), providerPaymentId)
+  return markPaid(db, ref, providerPaymentId)
+}
+
+export async function userFromReq(req, db) {
+  const token = (req.headers.authorization || '').replace(/^Bearer\s+/i, '')
+  if (!token) throw httpError(401, 'Faça login.')
+  const { data: u, error } = await db.auth.getUser(token)
+  if (error || !u?.user) throw httpError(401, 'Sessão inválida.')
+  return u.user
+}
+
 export async function markPaid(db, chargeId, providerPaymentId) {
   let q = db.from('charges').update({ status: 'pago', paid_at: new Date().toISOString() }).eq('id', chargeId).neq('status', 'pago')
   if (providerPaymentId) q = q.eq('provider_payment_id', String(providerPaymentId))
@@ -62,7 +87,7 @@ export async function mercadoPagoCreate(charge, baseUrl) {
     transaction_amount: Number(charge.amount),
     description: charge.description,
     payment_method_id: 'pix',
-    external_reference: charge.id,
+    external_reference: charge.external_reference || charge.id,
     notification_url: `${baseUrl}/api/pix/webhook?provider=mercadopago`,
     payer: { email: env('MERCADOPAGO_PAYER_EMAIL_FALLBACK', 'pagador@fithub.app'), first_name: charge.payer_name }
   }
@@ -71,7 +96,7 @@ export async function mercadoPagoCreate(charge, baseUrl) {
     headers: {
       Authorization: `Bearer ${env('MERCADOPAGO_ACCESS_TOKEN')}`,
       'Content-Type': 'application/json',
-      'X-Idempotency-Key': `fithub-${charge.id}`
+      'X-Idempotency-Key': `fithub-${charge.external_reference || charge.id}`
     },
     body: JSON.stringify(body)
   })
@@ -114,7 +139,7 @@ export async function asaasCreate(charge, payerCpf) {
     body: JSON.stringify({
       customer: customer.id, billingType: 'PIX', value: Number(charge.amount),
       dueDate: charge.due_date < new Date().toISOString().slice(0, 10) ? new Date().toISOString().slice(0, 10) : charge.due_date,
-      description: charge.description, externalReference: charge.id
+      description: charge.description, externalReference: charge.external_reference || charge.id
     })
   })
   const qr = await asaas(`/payments/${payment.id}/pixQrCode`)

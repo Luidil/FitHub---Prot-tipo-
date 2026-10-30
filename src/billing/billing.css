@@ -33,3 +33,10 @@
 .b-pay { text-align: center; }
 .b-amount { font-size: 2rem; color: #19f18f; }
 @media (max-width: 640px) { .billing .b-table thead { display: none; } .billing .b-table td { display: block; border: 0; padding: .2rem 0; } .billing .b-table tr { display: block; padding: .5rem 0; border-bottom: 1px solid rgba(255,255,255,.08); } }
+.b-steps{display:flex;gap:.5rem;flex-wrap:wrap;margin:.5rem 0}.b-steps span{padding:.3rem .7rem;border-radius:999px;background:rgba(255,255,255,.08);font-size:.85rem}.b-steps .on{background:#22c55e;color:#04210f;font-weight:700}
+.b-banner{display:flex;justify-content:space-between;align-items:center;gap:1rem}
+.b-onboarding ul{list-style:none;padding:0;margin:.5rem 0}.b-onboarding li{padding:.2rem 0}.b-onboarding li.done{opacity:.6}
+button.link{background:none;border:0;color:#22c55e;text-decoration:underline;cursor:pointer}
+button.small{padding:.35rem .8rem;font-size:.85rem}
+.b-plans{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:1rem;margin:1rem 0}
+.b-plan.current{outline:2px solid #22c55e}.b-plan ul{list-style:none;padding:0}.b-price{font-size:1.8rem;font-weight:800}.b-price small{font-size:.9rem;opacity:.7}

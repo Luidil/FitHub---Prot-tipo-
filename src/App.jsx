@@ -7,6 +7,7 @@ import markerShadow from 'leaflet/dist/images/marker-shadow.png'
 import 'leaflet/dist/leaflet.css'
 import { supabase } from './supabase'
 import OrganizerView from './billing/OrganizerView'
+import LandingPage from './saas/LandingPage'
 
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: markerIcon2x,
@@ -398,6 +399,15 @@ export default function App() {
   const [events, setEvents] = useState([])
   const [swipeIndex, setSwipeIndex] = useState(0)
   const [view, setView] = useState('home')
+  const [showLogin, setShowLogin] = useState(() => typeof window !== 'undefined' && /[?&]entrar/.test(window.location.search))
+  useEffect(() => {
+    // Onboarding: organizador recém-cadastrado sem organização vai direto para a Gestão
+    if (!user?.id || localStorage.getItem('fithub_onboard_seen_' + user.id)) return
+    supabase.from('organizations').select('id', { count: 'exact', head: true }).eq('owner_id', user.id).then(({ count, error }) => {
+      localStorage.setItem('fithub_onboard_seen_' + user.id, '1')
+      if (!error && !count) setView('organizador')
+    })
+  }, [user?.id])
   const [joined, setJoined] = useState({})
   const [fund, setFund] = useState(0)
   const [ranking, setRanking] = useState({})
@@ -1589,6 +1599,10 @@ export default function App() {
         </div>
       </div>
     )
+  }
+
+  if (!isAuthenticated && !showLogin) {
+    return <LandingPage onStart={() => setShowLogin(true)} />
   }
 
   if (!isAuthenticated) {
