@@ -6,6 +6,14 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
   SELECT EXISTS (SELECT 1 FROM profiles p WHERE p.id = auth.uid() AND p.role IN ('master','admin'));
 $$;
 
+-- Políticas genéricas criadas pelo painel (permitiam qualquer autenticado inserir)
+DO $$ DECLARE t TEXT; BEGIN
+  FOREACH t IN ARRAY ARRAY['venues','events','event_stats','event_players','teams','team_members'] LOOP
+    EXECUTE format('DROP POLICY IF EXISTS "Enable insert for authenticated" ON %I', t);
+    EXECUTE format('DROP POLICY IF EXISTS "Enable read for all users" ON %I', t);
+  END LOOP;
+END $$;
+
 -- ---------- venues: agora têm dono ----------
 ALTER TABLE venues ADD COLUMN IF NOT EXISTS created_by UUID REFERENCES auth.users(id) DEFAULT auth.uid();
 DROP POLICY IF EXISTS "Usuários autenticados podem criar venues" ON venues;

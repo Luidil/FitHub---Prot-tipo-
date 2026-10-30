@@ -127,52 +127,81 @@ ALTER TABLE championships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE championship_teams ENABLE ROW LEVEL SECURITY;
 
 -- Políticas para profiles
+DROP POLICY IF EXISTS "Profiles são públicos" ON profiles;
 CREATE POLICY "Profiles são públicos" ON profiles FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Usuários podem editar próprio perfil" ON profiles;
 CREATE POLICY "Usuários podem editar próprio perfil" ON profiles FOR UPDATE USING (auth.uid() = id);
+DROP POLICY IF EXISTS "Usuários podem criar próprio perfil" ON profiles;
 CREATE POLICY "Usuários podem criar próprio perfil" ON profiles FOR INSERT WITH CHECK (auth.uid() = id);
 
 -- Políticas para venues (qualquer um pode ver/criar)
+DROP POLICY IF EXISTS "Venues são públicos" ON venues;
 CREATE POLICY "Venues são públicos" ON venues FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Usuários autenticados podem criar venues" ON venues;
 CREATE POLICY "Usuários autenticados podem criar venues" ON venues FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Usuários autenticados podem editar venues" ON venues;
 CREATE POLICY "Usuários autenticados podem editar venues" ON venues FOR UPDATE USING (auth.role() = 'authenticated');
 
 -- Políticas para events
+DROP POLICY IF EXISTS "Events são públicos" ON events;
 CREATE POLICY "Events são públicos" ON events FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Usuários autenticados podem criar events" ON events;
 CREATE POLICY "Usuários autenticados podem criar events" ON events FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Criadores podem editar events" ON events;
 CREATE POLICY "Criadores podem editar events" ON events FOR UPDATE USING (auth.uid() = creator_id);
+DROP POLICY IF EXISTS "Criadores podem deletar events" ON events;
 CREATE POLICY "Criadores podem deletar events" ON events FOR DELETE USING (auth.uid() = creator_id);
 
 -- Políticas para event_stats
+DROP POLICY IF EXISTS "Event stats são públicos" ON event_stats;
 CREATE POLICY "Event stats são públicos" ON event_stats FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Autenticados podem criar event_stats" ON event_stats;
 CREATE POLICY "Autenticados podem criar event_stats" ON event_stats FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 -- Políticas para event_players
+DROP POLICY IF EXISTS "Event players são públicos" ON event_players;
 CREATE POLICY "Event players são públicos" ON event_players FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Usuários podem se inscrever" ON event_players;
 CREATE POLICY "Usuários podem se inscrever" ON event_players FOR INSERT WITH CHECK (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Usuários podem sair de eventos" ON event_players;
 CREATE POLICY "Usuários podem sair de eventos" ON event_players FOR DELETE USING (auth.uid() = user_id);
+DROP POLICY IF EXISTS "Usuários podem atualizar própria inscrição" ON event_players;
 CREATE POLICY "Usuários podem atualizar própria inscrição" ON event_players FOR UPDATE USING (auth.uid() = user_id);
 
 -- Políticas para performances
+DROP POLICY IF EXISTS "Performances são públicas" ON performances;
 CREATE POLICY "Performances são públicas" ON performances FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Autenticados podem criar performances" ON performances;
 CREATE POLICY "Autenticados podem criar performances" ON performances FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 -- Políticas para teams
+DROP POLICY IF EXISTS "Teams são públicos" ON teams;
 CREATE POLICY "Teams são públicos" ON teams FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Autenticados podem criar teams" ON teams;
 CREATE POLICY "Autenticados podem criar teams" ON teams FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Capitães podem editar teams" ON teams;
 CREATE POLICY "Capitães podem editar teams" ON teams FOR UPDATE USING (auth.uid() = captain_id);
 
 -- Políticas para team_members
+DROP POLICY IF EXISTS "Team members são públicos" ON team_members;
 CREATE POLICY "Team members são públicos" ON team_members FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Autenticados podem entrar em teams" ON team_members;
 CREATE POLICY "Autenticados podem entrar em teams" ON team_members FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Membros podem sair de teams" ON team_members;
 CREATE POLICY "Membros podem sair de teams" ON team_members FOR DELETE USING (auth.uid() = user_id);
 
 -- Políticas para championships
+DROP POLICY IF EXISTS "Championships são públicos" ON championships;
 CREATE POLICY "Championships são públicos" ON championships FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Autenticados podem criar championships" ON championships;
 CREATE POLICY "Autenticados podem criar championships" ON championships FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+DROP POLICY IF EXISTS "Organizadores podem editar championships" ON championships;
 CREATE POLICY "Organizadores podem editar championships" ON championships FOR UPDATE USING (auth.uid() = organizer_id);
 
 -- Políticas para championship_teams
+DROP POLICY IF EXISTS "Championship teams são públicos" ON championship_teams;
 CREATE POLICY "Championship teams são públicos" ON championship_teams FOR SELECT USING (true);
+DROP POLICY IF EXISTS "Autenticados podem inscrever teams" ON championship_teams;
 CREATE POLICY "Autenticados podem inscrever teams" ON championship_teams FOR INSERT WITH CHECK (auth.role() = 'authenticated');
 
 -- =============================================
@@ -186,7 +215,7 @@ BEGIN
   VALUES (NEW.id, COALESCE(NEW.raw_user_meta_data->>'name', NEW.email));
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$ LANGUAGE plpgsql SECURITY DEFINER SET search_path = public;
 
 CREATE OR REPLACE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
@@ -197,8 +226,9 @@ CREATE OR REPLACE TRIGGER on_auth_user_created
 -- =============================================
 
 -- Inserir algumas venues de exemplo
-INSERT INTO venues (name, bairro, tipo, superficie, city, state) VALUES
+INSERT INTO venues (name, bairro, tipo, superficie, city, state)
+SELECT * FROM (VALUES
   ('Quadra do Parque', 'Centro', 'Coberta', 'Sintético', 'Curitiba', 'PR'),
   ('Arena Fut7', 'Batel', 'Coberta', 'Grama sintética', 'Curitiba', 'PR'),
   ('Complexo Esportivo', 'Água Verde', 'Descoberta', 'Grama natural', 'Curitiba', 'PR')
-ON CONFLICT DO NOTHING;
+) v WHERE NOT EXISTS (SELECT 1 FROM venues);
