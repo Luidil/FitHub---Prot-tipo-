@@ -1,117 +1,100 @@
-# FitHub — App Mobile
+# FitHub — Gestão esportiva com cobrança por Pix
 
-Aplicativo mobile esportivo para combinar jogos, registrar presença e movimentar campeonatos comunitários. Disponível para **Android**, **iOS** e **Web**.
+App (Web/PWA, Android e iOS via Capacitor) para combinar jogos, campeonatos, check-in, estatísticas e ranking — agora com **área de gestão e cobrança** para **escolinhas de futebol, organizadores de campeonato de várzea/society e donos de quadra**.
 
-## 📱 Download
+## ⚡ Recursos
 
-- **Android:** [Play Store](#) _(em breve)_
-- **iOS:** [App Store](#) _(em breve)_
-- **Web:** [fithub.app](#) _(em breve)_
-
-
-No PC (mesma máquina): http://localhost:5173/
-No celular Android (Chrome) na mesma rede Wi‑Fi: http://192.168.11.52:5173/
-No emulador Android: http://10.0.2.2:5173/ (porta 5173)
-
-## 🚀 Acesso rápido
-
-- **Login demo:** `Lucas Santiago`
-- **Senha:** `123`
-
-### Acesso master (consolidado)
-
-- **Usuário:** `Luidil Gois`
-- **Senha:** `123`
-
-## ⚡ Principais recursos
-
-- **Feed de partidas:** swipe/tinder-like com taxa única de R$1 por atleta e check-in via QR, foto ou vídeo
-- **Campeonatos:** inscrições individuais ou por time, com alocação automática e confirmação de presença
-- **Ping de confirmação:** sistema de confirmação de presença para times antes das partidas
-- **Estatísticas e histórico:** registro de gols, passes, quilômetros e vídeos
-- **Stories:** fotos pré/pós jogo com compartilhamento nativo
-- **Times fixos e chat:** gerenciamento de squads, notificações e chat
-- **Ranking:** filtros por estado, cidade, quadra e faixa-etária
+- **Gestão (aba "Gestão")**: cadastro da escolinha/campeonato/quadra, atletas, agenda de treinos/jogos/reservas.
+- **Cobrança por Pix**: mensalidades geradas em lote por mês (sem duplicar) e cobranças avulsas (inscrição em campeonato, jogo, aluguel de quadra).
+- **Status pago / pendente / atrasado**, filtro de inadimplentes e resumo do mês (recebido, a receber, atrasado).
+- **Lembrete no WhatsApp**: botão que abre `wa.me` com a mensagem pronta, link de pagamento e Pix Copia e Cola.
+- **Página pública de pagamento** (`/?pagar=<id>`): QR Code + Copia e Cola, sem login; atualiza sozinha quando o pagamento cai.
+- **Provedores Pix**: Mercado Pago ou Asaas com baixa automática via webhook; **modo teste (mock)** sem nenhuma chave; e **Pix direto** (QR gerado com a chave Pix do organizador, baixa manual).
+- Feed de partidas, campeonatos, times, stories, ranking, perfil (já existentes).
 
 ## 🛠️ Stack
 
-- **Frontend:** React 18 + Vite
-- **Mobile:** Capacitor 6 (Android + iOS)
-- **PWA:** Instalável diretamente do navegador
-- **Estilo:** CSS com glassmorphism e safe-area-insets
+React 18 + Vite · Supabase (Auth + Postgres + RLS) · Funções serverless da Vercel (`/api`) · Capacitor 6 · PWA com service worker.
 
-## 📦 Instalação (Desenvolvimento)
+---
+
+## 1. Rodar localmente
+
+Requisitos: Node 18+.
 
 ```bash
 npm install
-npm run dev
+cp .env.example .env      # preencha VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY
+npm run dev               # http://localhost:5173
 ```
 
-## 📱 Build Mobile
+- Com `npm run dev` as funções `/api` **não** rodam: o app usa automaticamente o **Pix direto** (chave Pix cadastrada em Gestão → Configurações) e a baixa é manual ("Marcar pago").
+- Para testar também as funções `/api` localmente: `npm i -g vercel && vercel dev` (lê o mesmo `.env`).
 
-### Android
+## 2. Configurar o Supabase
+
+1. Crie um projeto em https://supabase.com (ou use o existente).
+2. Em **SQL Editor**, rode **na ordem** os arquivos de `supabase/migrations/`:
+   1. `20261030000001_schema_inicial.sql` (tabelas do app, se ainda não existirem)
+   2. `20261030000002_cobranca_pix.sql` (gestão, cobranças, agenda, RLS, página pública)
+   - Ou com a CLI: `supabase link --project-ref SEU-PROJETO && supabase db push`.
+   - Se o schema inicial já foi aplicado antes, rode só o segundo.
+3. Em **Authentication → Providers**, deixe **Email** ativo. Em **Authentication → URL Configuration**, coloque a URL da Vercel em *Site URL* e *Redirect URLs*.
+4. Em **Project Settings → API**, copie:
+   - `Project URL` → `VITE_SUPABASE_URL` e `SUPABASE_URL`
+   - `anon public` → `VITE_SUPABASE_ANON_KEY`
+   - `service_role` → `SUPABASE_SERVICE_ROLE_KEY` (**só no servidor/Vercel, nunca no front**)
+5. Perfil master (painel "Master"): no SQL Editor, `update profiles set role = 'master' where id = '<uuid do seu usuário>';`. Usuários não conseguem mudar o próprio `role` (trigger de segurança).
+
+Login: cada pessoa cria a conta com e-mail e senha na tela inicial (Supabase Auth). Não existem mais usuários/senhas fixos no código.
+
+## 3. Configurar o provedor Pix
+
+Defina `PIX_PROVIDER` na Vercel. Sem chave configurada, o app cai em `mock` automaticamente.
+
+| Modo | Como funciona |
+|---|---|
+| `mock` (padrão) | Nada é cobrado. "Gerar Pix" usa sua chave Pix (se cadastrada) e aparece o botão **Simular webhook** para testar a baixa. |
+| `mercadopago` | Gera Pix dinâmico no Mercado Pago; webhook dá baixa automática. |
+| `asaas` | Gera Pix no Asaas (pede CPF/CNPJ do pagador); webhook dá baixa automática. |
+
+**Mercado Pago**
+1. Crie a conta em https://www.mercadopago.com.br/developers → *Suas integrações* → crie uma aplicação.
+2. Copie o **Access Token** (use o de *teste* primeiro) → `MERCADOPAGO_ACCESS_TOKEN`. Cadastre uma chave Pix na conta Mercado Pago.
+3. `PIX_PROVIDER=mercadopago`. O webhook é enviado automaticamente para `https://SEU-APP.vercel.app/api/pix/webhook?provider=mercadopago` (via `notification_url`). O servidor sempre reconsulta o pagamento na API do Mercado Pago antes de dar baixa.
+
+**Asaas**
+1. Crie a conta (sandbox: https://sandbox.asaas.com) → *Integrações* → gere a **API Key** → `ASAAS_API_KEY`; `ASAAS_ENV=sandbox` ou `production`.
+2. Em *Integrações → Webhooks*, cadastre `https://SEU-APP.vercel.app/api/pix/webhook?provider=asaas`, eventos de **Cobrança** (PAYMENT_RECEIVED / PAYMENT_CONFIRMED) e um **token de autenticação** → `ASAAS_WEBHOOK_TOKEN` (mesmo valor).
+3. `PIX_PROVIDER=asaas`.
+
+## 4. Deploy na Vercel
+
+1. Em https://vercel.com → *Add New Project* → importe este repositório do GitHub. Framework: **Vite** (o `vercel.json` já define build `npm run build` e saída `dist`).
+2. Em *Settings → Environment Variables*, cadastre todas as variáveis do `.env.example` com seus valores reais (`VITE_*`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `PUBLIC_APP_URL`, `VITE_PUBLIC_APP_URL`, `PIX_PROVIDER` e as do provedor).
+3. *Deploy*. Teste `https://SEU-APP.vercel.app/api/health` → deve responder `{"ok":true,"provider":"..."}`.
+4. Atualize a *Site URL* no Supabase e o webhook do provedor com a URL final.
+5. PWA: abra o site no celular → "Adicionar à tela inicial".
+
+## 5. Como testar o fluxo de cobrança
+
+1. Crie uma conta e entre. Abra **Gestão** → cadastre a escolinha (com chave Pix e mensalidade padrão).
+2. **Atletas** → cadastre 2 atletas com WhatsApp.
+3. **Cobranças** → "Gerar mensalidades do mês"; crie também uma cobrança avulsa com vencimento no passado (vira **Atrasado**).
+4. Clique **Gerar Pix** → **Ver Pix** / **Copiar link de pagamento** → abra o link numa aba anônima (página pública).
+5. **Lembrar no WhatsApp** abre a conversa com a mensagem pronta.
+6. Em `mock`, clique **Simular webhook** (ou **Marcar pago**) → status vira **Pago** e a página pública atualiza.
+
+## 📱 Mobile (Capacitor)
 
 ```bash
-# Build completo e abrir no Android Studio
-npm run android
+npm run android   # build + sync + abre Android Studio
+npm run ios       # build + sync + abre Xcode (macOS)
 ```
+No app nativo, defina `VITE_PUBLIC_APP_URL` para os links de pagamento apontarem para o site.
 
-Requisitos:
-- [Android Studio](https://developer.android.com/studio)
-- JDK 17+
+## 🔒 Segurança
 
-### iOS (apenas macOS)
-
-```bash
-# Build completo e abrir no Xcode
-npm run ios
-```
-
-Requisitos:
-- Xcode 15+
-- CocoaPods
-- macOS
-
-### Scripts úteis
-
-| Comando              | Descrição                                      |
-|----------------------|------------------------------------------------|
-| `npm run dev`        | Dev server com HMR                             |
-| `npm run build`      | Build para produção                            |
-| `npm run icons`      | Gerar ícones PNG a partir do SVG               |
-| `npm run mobile:build` | Build + sync Capacitor                       |
-| `npm run android`    | Build e abrir no Android Studio                |
-| `npm run ios`        | Build e abrir no Xcode                         |
-
-## 🌐 Deploy Web
-
-1. `npm run build`
-2. Suba o conteúdo da pasta `dist/` para um servidor estático ou use Vercel/Netlify
-
-## 📤 Publicar nas Lojas
-
-### Google Play Store
-
-1. Abra o projeto no Android Studio: `npm run android`
-2. Configure a assinatura (signing) em `android/app/build.gradle`
-3. Build → Generate Signed Bundle (AAB)
-4. Suba o AAB no [Google Play Console](https://play.google.com/console)
-
-### Apple App Store
-
-1. Abra o projeto no Xcode: `npm run ios`
-2. Configure o Team e Bundle ID nas settings do projeto
-3. Product → Archive
-4. Distribua via App Store Connect
-
-## 📊 Banco de Dados (opcional)
-
-Um esquema SQLite está disponível em [db/schema.sql](db/schema.sql) para backend futuro:
-
-```bash
-sqlite3 fithub.db < db/schema.sql
-```
-
-## 🤝 Contribuindo
-
-Abra issues ou PRs em [Luidil/FitHub](https://github.com/Luidil/FitHub---Prot-tipo-).
+- Nenhuma chave fica no código: tudo vem de variáveis de ambiente (`.env` está no `.gitignore`).
+- `SUPABASE_SERVICE_ROLE_KEY` e as chaves dos provedores só existem nas funções `/api`.
+- RLS: cada organizador só vê os próprios atletas, cobranças e agenda; a página pública expõe só os dados de uma cobrança pelo UUID.
