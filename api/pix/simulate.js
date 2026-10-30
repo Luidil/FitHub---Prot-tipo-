@@ -1,8 +1,9 @@
-import { adminClient, getProvider, loadOwnedCharge, markPaid, readBody, send } from '../_lib/server.js'
+import { clientSplitEnabled, adminClient, getProvider, loadOwnedCharge, markPaid, readBody, send } from '../_lib/server.js'
 
 // Só no modo mock (sem chaves de provedor): simula a confirmação do Pix como se fosse o webhook.
 export default async function handler(req, res) {
   if (req.method !== 'POST') return send(res, 405, { error: 'Use POST.' })
+  if (!clientSplitEnabled()) return send(res, 403, { error: 'Cobranças de clientes usam Pix direto: marque como pago manualmente.' })
   if (getProvider() !== 'mock') return send(res, 403, { error: 'Simulação desativada: há um provedor real configurado.' })
   try {
     const { chargeId } = await readBody(req)

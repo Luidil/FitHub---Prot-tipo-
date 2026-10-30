@@ -11,6 +11,12 @@ export function getProvider() {
   return ['mercadopago', 'asaas'].includes(p) ? p : 'mock'
 }
 
+// Mensalidades/inscrições dos clientes NUNCA passam pela conta da plataforma,
+// a não ser que um split (subconta por organização) seja implementado e ligado explicitamente.
+export function clientSplitEnabled() {
+  return env('PIX_CLIENT_SPLIT_ENABLED') === 'true' && env('PIX_SPLIT_IMPLEMENTED') === 'yes-subaccounts'
+}
+
 export function adminClient() {
   const url = env('SUPABASE_URL') || env('VITE_SUPABASE_URL')
   const key = env('SUPABASE_SERVICE_ROLE_KEY')
@@ -63,6 +69,7 @@ export async function markSaasPaid(db, invoiceId, providerPaymentId) {
 
 export async function markAnyPaid(db, ref, providerPaymentId) {
   if (String(ref).startsWith('saas:')) return markSaasPaid(db, String(ref).slice(5), providerPaymentId)
+  if (!clientSplitEnabled()) return // cobranças de clientes não são processadas pelo provedor da plataforma
   return markPaid(db, ref, providerPaymentId)
 }
 

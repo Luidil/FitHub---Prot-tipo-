@@ -299,34 +299,16 @@ function Charges({ org, athletes, charges, reload, toast }) {
     toast(status === 'pago' ? 'Marcado como pago.' : 'Cobrança atualizada.', 'success'); reload()
   }
 
+  // Pix direto: o dinheiro cai na chave Pix da própria organização (nunca na conta da plataforma).
   async function generatePix(c) {
+    const code = staticPix(c)
+    if (!code) return toast('Cadastre a chave Pix da sua organização em Configurações para gerar o Pix.', 'error')
     setBusy(true)
-    try {
-      let payerCpf
-      const res = await callApi('pix/create', { chargeId: c.id }).catch(async err => {
-        if (/CPF/.test(err.message)) {
-          payerCpf = prompt('O Asaas exige o CPF/CNPJ do pagador:')
-          if (payerCpf) return callApi('pix/create', { chargeId: c.id, payerCpf })
-        }
-        throw err
-      })
-      const updated = res.charge
-      if (!updated.pix_copy_paste) {
-        const code = staticPix(updated)
-        if (code) await supabase.from('charges').update({ pix_copy_paste: code, provider: 'pix_direto' }).eq('id', c.id)
-        toast(res.provider === 'mock' ? 'Modo teste: Pix gerado com sua chave (sem confirmação automática).' : 'Pix gerado!', 'info')
-      } else toast('Pix gerado no provedor! A baixa será automática.', 'success')
-      await reload()
-      setPixOpen(c.id)
-    } catch (err) {
-      // Sem API (dev local/sem servidor): usa Pix direto com a chave do organizador.
-      const code = staticPix(c)
-      if (code) {
-        await supabase.from('charges').update({ pix_copy_paste: code, provider: 'pix_direto' }).eq('id', c.id)
-        toast('Pix direto gerado com sua chave. Confirme o pagamento manualmente.', 'info')
-        await reload(); setPixOpen(c.id)
-      } else toast(`${err.message} Cadastre uma chave Pix em Configurações para usar o Pix direto.`, 'error')
-    } finally { setBusy(false) }
+    const { error } = await supabase.from('charges').update({ pix_copy_paste: code, provider: 'pix_direto', pix_qr_base64: null }).eq('id', c.id)
+    setBusy(false)
+    if (error) return toast('Erro: ' + error.message, 'error')
+    toast('Pix gerado com a sua chave. Quando o pagamento cair, marque como pago.', 'success')
+    await reload(); setPixOpen(c.id)
   }
 
   async function simulatePaid(c) {
@@ -396,7 +378,6 @@ function Charges({ org, athletes, charges, reload, toast }) {
                     : <span className="meta">sem WhatsApp</span>}
                   <button className="ghost" onClick={() => copy(payLink(c.id))}>Copiar link de pagamento</button>
                   <button className="ghost" onClick={() => setStatus(c, 'pago')}>Marcar pago</button>
-                  {['mock', 'pix_direto'].includes(c.provider) && <button className="ghost" onClick={() => simulatePaid(c)}>Simular webhook</button>}
                   <button className="ghost" onClick={() => confirm('Cancelar esta cobrança?') && setStatus(c, 'cancelado')}>Cancelar</button>
                 </div>
               )}

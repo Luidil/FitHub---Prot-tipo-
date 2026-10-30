@@ -109,3 +109,9 @@ No app nativo, defina `VITE_PUBLIC_APP_URL` para os links de pagamento apontarem
 - **Onboarding**: novo usuário sem organização vai direto para a Gestão, com checklist de primeiros passos.
 - Variável nova: `VITE_SALES_WHATSAPP` (seu número com DDI, ex.: 5571999999999).
 - Rode também a migration `supabase/migrations/20261030000003_rls_e_saas.sql` (corrige RLS das tabelas antigas).
+
+## Para onde vai o dinheiro (importante)
+
+- **Mensalidades, inscrições e aluguéis dos clientes**: sempre **Pix direto** na chave Pix da própria organização (configurada em Gestão → Configurações). O FitHub só gera o código; o organizador marca como pago.
+- **Assinatura do FitHub (Básico/Pro)**: é a única coisa que passa pelo `PIX_PROVIDER` (Mercado Pago/Asaas) e cai na conta da plataforma.
+- O servidor recusa gerar ou dar baixa em cobranças de clientes pelo provedor da plataforma. Só existe uma trava futura (`PIX_CLIENT_SPLIT_ENABLED=true` **e** `PIX_SPLIT_IMPLEMENTED=yes-subaccounts`) para quando houver split por subconta.

@@ -1,4 +1,4 @@
-import { adminClient, getProvider, loadOwnedCharge, mercadoPagoCreate, asaasCreate, baseUrlFrom, readBody, send } from '../_lib/server.js'
+import { clientSplitEnabled, adminClient, getProvider, loadOwnedCharge, mercadoPagoCreate, asaasCreate, baseUrlFrom, readBody, send } from '../_lib/server.js'
 
 // POST /api/pix/create  { chargeId, payerCpf? }  -> gera o Pix da cobrança no provedor configurado
 export default async function handler(req, res) {
@@ -6,6 +6,8 @@ export default async function handler(req, res) {
   try {
     const { chargeId, payerCpf } = await readBody(req)
     if (!chargeId) return send(res, 400, { error: 'chargeId obrigatório.' })
+    // Padrão (e única opção hoje): Pix direto na chave da própria organização. O app gera o código no navegador.
+    if (!clientSplitEnabled()) return send(res, 409, { error: 'Pix direto: use a chave Pix da organização.', mode: 'pix_direto' })
     const db = adminClient()
     const charge = await loadOwnedCharge(req, db, chargeId)
     if (charge.status === 'pago') return send(res, 400, { error: 'Cobrança já paga.' })
